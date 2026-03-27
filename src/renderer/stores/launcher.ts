@@ -1,0 +1,109 @@
+import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
+import type { BrowserInstanceInfo, LauncherStatusChange } from '@shared/types'
+
+type RunningRecord = Record<string, BrowserInstanceInfo>
+
+function toRecord(instances: BrowserInstanceInfo[]): RunningRecord {
+  return instances.reduce<RunningRecord>((record, instance) => {
+    record[instance.profileId] = instance
+    return record
+  }, {})
+}
+
+export const useLauncherStore = defineStore('launcher', () => {
+  const runningInstances = ref<RunningRecord>({})
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  let unsubscribe: (() => void) | null = null
+
+  const runningCount = computed(() => Object.keys(runningInstances.value).length)
+
+  async function syncRunning(): Promise<void> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const result = await window.api.launcher.getAllRunning()
+
+      if (result.success) {
+        runningInstances.value = toRecord(result.data)
+      } else {
+        error.value = result.error
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function startProfile(profileId: string): Promise<boolean> {
+    const result = await window.api.launcher.start({ profileId })
+
+    if (!result.success) {
+      error.value = result.error
+      return false
+    }
+
+    runningInstances.value = {
+      ...runningInstances.value,
+      [profileId]: result.data
+    }
+
+    return true
+  }
+
+  async function stopProfile(profileId: string): Promise<boolean> {
+    const result = await window.api.launcher.stop({ profileId })
+
+    if (!result.success) {
+      error.value = result.error
+      return false
+    }
+
+    const nextInstances = { ...runningInstances.value }
+    delete nextInstances[profileId]
+    runningInstances.value = nextInstances
+
+    return true
+  }
+
+  function applyStatusChange(payload: LauncherStatusChange): void {
+    if (payload.status === 'started' && payload.data) {
+      runningInstances.value = {
+        ...runningInstances.value,
+        [payload.profileId]: payload.data
+      }
+      return
+    }
+
+    const nextInstances = { ...runningInstances.value }
+    delete nextInstances[payload.profileId]
+    runningInstances.value = nextInstances
+  }
+
+  function setupListeners(): void {
+    if (unsubscribe) {
+      return
+    }
+
+    unsubscribe = window.api.onLauncherStatusChange((payload) => {
+      applyStatusChange(payload)
+    })
+  }
+
+  function isRunning(profileId: string): boolean {
+    return Boolean(runningInstances.value[profileId])
+  }
+
+  return {
+    runningInstances,
+    runningCount,
+    loading,
+    error,
+    syncRunning,
+    startProfile,
+    stopProfile,
+    setupListeners,
+    isRunning
+  }
+})
