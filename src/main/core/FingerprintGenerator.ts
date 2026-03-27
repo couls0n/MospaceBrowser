@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { app } from 'electron'
 import type {
   FingerprintConfig,
   FingerprintGenerationOptions,
@@ -130,9 +131,12 @@ export class FingerprintGenerator {
   }
 
   private constructor() {
-    const templatesPath = join(__dirname, '../templates/ua-templates.json')
-    const gpuVendorsPath = join(__dirname, '../templates/gpu-vendors.json')
-    const timezoneMappingPath = join(__dirname, '../templates/timezone-mapping.json')
+    const runtimeAssetsRoot = app.isPackaged
+      ? join(__dirname, '..')
+      : join(process.cwd(), 'src', 'main')
+    const templatesPath = join(runtimeAssetsRoot, 'templates', 'ua-templates.json')
+    const gpuVendorsPath = join(runtimeAssetsRoot, 'templates', 'gpu-vendors.json')
+    const timezoneMappingPath = join(runtimeAssetsRoot, 'templates', 'timezone-mapping.json')
 
     this.templates = JSON.parse(readFileSync(templatesPath, 'utf-8')) as UATemplate[]
     this.gpuVendors = JSON.parse(readFileSync(gpuVendorsPath, 'utf-8')) as GpuVendorsData

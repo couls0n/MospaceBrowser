@@ -334,7 +334,10 @@ export class BrowserLauncher extends EventEmitter {
     profileId: string,
     fingerprintConfig: FingerprintConfig
   ): Promise<string> {
-    const injectionScriptPath = join(__dirname, '../injections/fingerprint.js')
+    const runtimeAssetsRoot = app.isPackaged
+      ? join(__dirname, '..')
+      : join(process.cwd(), 'src', 'main')
+    const injectionScriptPath = join(runtimeAssetsRoot, 'injections', 'fingerprint.js')
     const template = await readFile(injectionScriptPath, 'utf-8')
 
     return template

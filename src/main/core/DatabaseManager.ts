@@ -69,7 +69,7 @@ export class DatabaseManager {
       await prisma.$connect()
     }
 
-    await this.ensureProfileColumns(prisma)
+    await this.ensureCompatibility(prisma)
 
     this.prisma = prisma
     logger.info('Database ready at', paths.database)
@@ -129,7 +129,9 @@ export class DatabaseManager {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021'
   }
 
-  private async ensureProfileColumns(prisma: PrismaClient): Promise<void> {
+  private async ensureCompatibility(prisma: PrismaClient): Promise<void> {
+    await this.ensureGroupTable(prisma)
+
     const tableInfo = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
       'PRAGMA table_info("Profile")'
     )
@@ -148,5 +150,24 @@ export class DatabaseManager {
     if (!existingColumns.has('fingerprintConfig')) {
       await prisma.$executeRawUnsafe('ALTER TABLE "Profile" ADD COLUMN "fingerprintConfig" TEXT')
     }
+
+    if (!existingColumns.has('groupId')) {
+      await prisma.$executeRawUnsafe('ALTER TABLE "Profile" ADD COLUMN "groupId" TEXT')
+    }
+
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS "Profile_groupId_idx" ON "Profile"("groupId")'
+    )
+  }
+
+  private async ensureGroupTable(prisma: PrismaClient): Promise<void> {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Group" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "name" TEXT NOT NULL,
+        "color" TEXT NOT NULL DEFAULT '#2563eb',
+        "sortOrder" INTEGER NOT NULL DEFAULT 0
+      )
+    `)
   }
 }

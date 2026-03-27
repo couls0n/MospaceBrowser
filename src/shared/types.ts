@@ -6,7 +6,7 @@ export type ProxyType = 'none' | 'http' | 'https' | 'socks5'
 export type ColorScheme = 'system' | 'light' | 'dark'
 export type LauncherStatus = 'started' | 'stopped' | 'crashed'
 export type OSType = 'win10' | 'win11' | 'macos' | 'linux'
-export type BrowserPathSource = 'environment' | 'settings' | 'default'
+export type BrowserPathSource = 'environment' | 'settings' | 'auto-detected' | 'default'
 
 export interface BrowserWindowConfig {
   width: number

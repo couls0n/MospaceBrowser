@@ -13,6 +13,10 @@ export const useProfileStore = defineStore('profiles', () => {
   const saving = ref(false)
   const error = ref<string | null>(null)
 
+  function toErrorMessage(cause: unknown): string {
+    return cause instanceof Error ? cause.message : 'Unknown profile operation error'
+  }
+
   const profileMap = computed(() => {
     return new Map(profiles.value.map((profile) => [profile.id, profile]))
   })
@@ -29,6 +33,8 @@ export const useProfileStore = defineStore('profiles', () => {
       } else {
         error.value = result.error
       }
+    } catch (cause) {
+      error.value = toErrorMessage(cause)
     } finally {
       loading.value = false
     }
@@ -48,6 +54,9 @@ export const useProfileStore = defineStore('profiles', () => {
 
       await loadProfiles()
       return true
+    } catch (cause) {
+      error.value = toErrorMessage(cause)
+      return false
     } finally {
       saving.value = false
     }
@@ -67,6 +76,9 @@ export const useProfileStore = defineStore('profiles', () => {
 
       await loadProfiles()
       return true
+    } catch (cause) {
+      error.value = toErrorMessage(cause)
+      return false
     } finally {
       saving.value = false
     }
@@ -74,28 +86,38 @@ export const useProfileStore = defineStore('profiles', () => {
 
   async function deleteProfile(input: DeleteProfileInput): Promise<boolean> {
     error.value = null
-    const result = await window.api.db.deleteProfile(input)
+    try {
+      const result = await window.api.db.deleteProfile(input)
 
-    if (!result.success) {
-      error.value = result.error
+      if (!result.success) {
+        error.value = result.error
+        return false
+      }
+
+      await loadProfiles()
+      return true
+    } catch (cause) {
+      error.value = toErrorMessage(cause)
       return false
     }
-
-    await loadProfiles()
-    return true
   }
 
   async function cloneProfile(id: string): Promise<boolean> {
     error.value = null
-    const result = await window.api.db.cloneProfile({ id })
+    try {
+      const result = await window.api.db.cloneProfile({ id })
 
-    if (!result.success) {
-      error.value = result.error
+      if (!result.success) {
+        error.value = result.error
+        return false
+      }
+
+      await loadProfiles()
+      return true
+    } catch (cause) {
+      error.value = toErrorMessage(cause)
       return false
     }
-
-    await loadProfiles()
-    return true
   }
 
   function getProfileById(id: string): Profile | undefined {
