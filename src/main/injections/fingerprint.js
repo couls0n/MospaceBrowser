@@ -88,11 +88,13 @@
         userAgent: fingerprintConfig.userAgent,
         platform: fingerprintConfig.software.platform,
         locale: fingerprintConfig.software.locale,
+        languages: [fingerprintConfig.software.locale, 'en-US', 'en'],
         timezone: fingerprintConfig.software.timezone,
         cpuCores: fingerprintConfig.hardware.cpuCores,
         memory: fingerprintConfig.hardware.memory,
         screen: fingerprintConfig.hardware.screen,
-        gpu: fingerprintConfig.hardware.gpu
+        gpu: fingerprintConfig.hardware.gpu,
+        doNotTrack: fingerprintConfig.software.doNotTrack ? '1' : null
       },
       observed: {
         userAgent: navigator.userAgent,
