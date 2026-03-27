@@ -15,7 +15,8 @@
     "db:push": "prisma db push",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && electron-vite build && npm run build:copy-resources",
+    "build:copy-resources": "node -e \"const fs=require('fs'); const path=require('path'); fs.cpSync('src/main/templates', 'out/main/templates', {recursive:true,force:true}); fs.cpSync('src/main/injections', 'out/main/injections', {recursive:true,force:true}); console.log('Resources copied');\"",
     "postinstall": "prisma generate && electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win"
@@ -27,10 +28,14 @@
     "element-plus": "^2.10.5",
     "pinia": "^2.3.1",
     "vue": "^3.4.38",
+    "ws": "^8.20.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electron-toolkit/eslint-config-prettier": "^3.0.0",
+    "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@types/node": "^20.17.57",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.2.4",
     "electron": "^28.3.3",
     "electron-builder": "^24.13.3",

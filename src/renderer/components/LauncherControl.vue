@@ -20,11 +20,7 @@ function handleClick(): void {
 </script>
 
 <template>
-  <el-button
-    :type="isRunning ? 'danger' : 'primary'"
-    :loading="busy"
-    @click="handleClick"
-  >
+  <el-button :type="isRunning ? 'danger' : 'primary'" :loading="busy" @click="handleClick">
     {{ isRunning ? 'Stop Browser' : 'Start Browser' }}
   </el-button>
 </template>

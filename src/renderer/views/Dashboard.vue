@@ -36,9 +36,10 @@ function openEditDialog(profileId: string): void {
 }
 
 async function handleSave(payload: CreateProfileInput | UpdateProfileInput): Promise<void> {
-  const saved = 'id' in payload
-    ? await profileStore.updateProfile(payload)
-    : await profileStore.createProfile(payload)
+  const saved =
+    'id' in payload
+      ? await profileStore.updateProfile(payload)
+      : await profileStore.createProfile(payload)
 
   if (saved) {
     ElMessage.success('Profile saved.')
@@ -104,6 +105,16 @@ async function handleStop(profileId: string): Promise<void> {
   }
 }
 
+async function handleVerify(profileId: string): Promise<void> {
+  const verified = await launcherStore.verifyProfile(profileId)
+
+  if (verified) {
+    ElMessage.success('Verification page opened in the running browser.')
+  } else if (launcherStore.error) {
+    ElMessage.error(launcherStore.error)
+  }
+}
+
 async function openDirectory(path: string): Promise<void> {
   const result = await window.api.system.openDirectory({ path })
 
@@ -160,14 +171,11 @@ onMounted(async () => {
         @clone="handleClone"
         @start="handleStart"
         @stop="handleStop"
+        @verify="handleVerify"
         @open-dir="openDirectory"
       />
     </div>
 
-    <profile-editor
-      v-model="editorVisible"
-      :profile="editingProfile"
-      @save="handleSave"
-    />
+    <profile-editor v-model="editorVisible" :profile="editingProfile" @save="handleSave" />
   </section>
 </template>

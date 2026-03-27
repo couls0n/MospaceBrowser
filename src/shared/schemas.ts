@@ -14,6 +14,37 @@ export const BrowserConfigSchema = z.object({
   window: BrowserWindowSchema
 })
 
+export const FingerprintConfigSchema = z.object({
+  userAgent: z.string(),
+  secChUa: z.string().optional(),
+  hardware: z.object({
+    cpuCores: z.number().int().positive(),
+    memory: z.number().positive(),
+    screen: z.object({
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      colorDepth: z.number().int().positive(),
+      pixelRatio: z.number().positive()
+    }),
+    gpu: z.object({
+      vendor: z.string(),
+      renderer: z.string()
+    }),
+    fonts: z.array(z.string())
+  }),
+  software: z.object({
+    timezone: z.string(),
+    locale: z.string(),
+    platform: z.string(),
+    doNotTrack: z.boolean()
+  }),
+  advanced: z.object({
+    canvasNoise: z.number().min(0).max(10),
+    webglNoise: z.boolean(),
+    audioNoise: z.boolean()
+  })
+})
+
 export const ProxyConfigSchema = z.object({
   type: z.enum(['none', 'http', 'https', 'socks5']),
   host: z.string().min(1).max(255),
@@ -27,6 +58,9 @@ export const CreateProfileSchema = z.object({
   notes: z.string().max(1000).optional(),
   browserConfig: BrowserConfigSchema,
   proxyConfig: ProxyConfigSchema.optional(),
+  fingerprintEnabled: z.boolean().default(true),
+  fingerprintOs: z.enum(['win10', 'win11', 'macos', 'linux']).optional(),
+  fingerprintConfig: FingerprintConfigSchema.optional(),
   groupId: z.string().uuid().optional()
 })
 
@@ -36,6 +70,9 @@ export const UpdateProfileSchema = z.object({
   notes: z.string().max(1000).optional(),
   browserConfig: BrowserConfigSchema.optional(),
   proxyConfig: ProxyConfigSchema.optional(),
+  fingerprintEnabled: z.boolean().optional(),
+  fingerprintOs: z.enum(['win10', 'win11', 'macos', 'linux']).optional(),
+  fingerprintConfig: FingerprintConfigSchema.optional(),
   groupId: z.string().uuid().optional()
 })
 
@@ -63,6 +100,10 @@ export const OpenDirectorySchema = z.object({
   path: z.string().min(1)
 })
 
+export const UpdateAppSettingsSchema = z.object({
+  browserExecutablePath: z.string().min(1).optional()
+})
+
 export const CreateProxySchema = z.object({
   name: z.string().max(100).optional(),
   type: z.enum(['http', 'https', 'socks5']),
@@ -79,4 +120,15 @@ export const DeleteProxySchema = z.object({
 export const CheckProxySchema = z.object({
   host: z.string().min(1).max(255),
   port: z.number().int().min(1).max(65535)
+})
+
+// Fingerprint generation schemas
+export const GenerateFingerprintSchema = z.object({
+  seed: z.string().min(1),
+  ip: z.string().ip().optional(),
+  os: z.enum(['win10', 'win11', 'macos', 'linux']).optional()
+})
+
+export const ValidateFingerprintSchema = z.object({
+  config: FingerprintConfigSchema
 })

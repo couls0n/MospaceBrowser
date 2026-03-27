@@ -37,6 +37,7 @@ export const useLauncherStore = defineStore('launcher', () => {
   }
 
   async function startProfile(profileId: string): Promise<boolean> {
+    error.value = null
     const result = await window.api.launcher.start({ profileId })
 
     if (!result.success) {
@@ -53,6 +54,7 @@ export const useLauncherStore = defineStore('launcher', () => {
   }
 
   async function stopProfile(profileId: string): Promise<boolean> {
+    error.value = null
     const result = await window.api.launcher.stop({ profileId })
 
     if (!result.success) {
@@ -63,6 +65,18 @@ export const useLauncherStore = defineStore('launcher', () => {
     const nextInstances = { ...runningInstances.value }
     delete nextInstances[profileId]
     runningInstances.value = nextInstances
+
+    return true
+  }
+
+  async function verifyProfile(profileId: string): Promise<boolean> {
+    error.value = null
+    const result = await window.api.launcher.verify({ profileId })
+
+    if (!result.success) {
+      error.value = result.error
+      return false
+    }
 
     return true
   }
@@ -103,6 +117,7 @@ export const useLauncherStore = defineStore('launcher', () => {
     syncRunning,
     startProfile,
     stopProfile,
+    verifyProfile,
     setupListeners,
     isRunning
   }

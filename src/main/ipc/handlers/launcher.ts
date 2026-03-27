@@ -25,6 +25,14 @@ export const launcherHandlers: IpcHandlerDefinition[] = [
     }
   },
   {
+    channel: IPC_CHANNELS.LAUNCHER.VERIFY,
+    handler: async (_event, payload) => {
+      const input = StartProfileSchema.parse(payload)
+      await browserLauncher.openVerificationPage(input.profileId)
+      return undefined
+    }
+  },
+  {
     channel: IPC_CHANNELS.LAUNCHER.GET_STATUS,
     handler: async (_event, payload) => {
       const input = StartProfileSchema.parse(payload)

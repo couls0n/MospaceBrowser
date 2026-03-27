@@ -1,11 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '@shared/constants'
 import type {
+  AppSettings,
   BrowserInstanceInfo,
+  BrowserExecutablePathInfo,
   CloneProfileInput,
   CreateProfileInput,
   CreateProxyInput,
   DeleteProfileInput,
+  FingerprintConfig,
+  FingerprintGenerationOptions,
   IPCResponse,
   LauncherStatusChange,
   Profile,
@@ -32,14 +36,23 @@ export interface XussApi {
   launcher: {
     start: (input: { profileId: string }) => Promise<IPCResponse<BrowserInstanceInfo>>
     stop: (input: { profileId: string }) => Promise<IPCResponse<void>>
+    verify: (input: { profileId: string }) => Promise<IPCResponse<void>>
     getStatus: (input: { profileId: string }) => Promise<IPCResponse<'running' | 'stopped'>>
     getAllRunning: () => Promise<IPCResponse<BrowserInstanceInfo[]>>
+  }
+  fingerprint: {
+    generate: (options: FingerprintGenerationOptions) => Promise<IPCResponse<FingerprintConfig>>
+    validate: (config: FingerprintConfig) => Promise<IPCResponse<boolean>>
   }
   system: {
     getPlatform: () => Promise<IPCResponse<NodeJS.Platform>>
     getVersion: () => Promise<IPCResponse<string>>
     getPaths: () => Promise<IPCResponse<SystemPaths>>
     openDirectory: (input: { path: string }) => Promise<IPCResponse<void>>
+    getSettings: () => Promise<IPCResponse<AppSettings>>
+    updateSettings: (input: AppSettings) => Promise<IPCResponse<AppSettings>>
+    getBrowserExecutable: () => Promise<IPCResponse<BrowserExecutablePathInfo>>
+    pickBrowserExecutable: () => Promise<IPCResponse<string | undefined>>
   }
   onLauncherStatusChange: (callback: (payload: LauncherStatusChange) => void) => () => void
 }
@@ -60,17 +73,26 @@ const api: XussApi = {
   launcher: {
     start: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.START, input),
     stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.STOP, input),
+    verify: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.VERIFY, input),
     getStatus: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.GET_STATUS, input),
     getAllRunning: () => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.GET_ALL_RUNNING)
+  },
+  fingerprint: {
+    generate: (options) => ipcRenderer.invoke(IPC_CHANNELS.FINGERPRINT.GENERATE, options),
+    validate: (config) => ipcRenderer.invoke(IPC_CHANNELS.FINGERPRINT.VALIDATE, { config })
   },
   system: {
     getPlatform: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_PLATFORM),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_VERSION),
     getPaths: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_PATHS),
-    openDirectory: (input) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.OPEN_DIRECTORY, input)
+    openDirectory: (input) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.OPEN_DIRECTORY, input),
+    getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_SETTINGS),
+    updateSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.UPDATE_SETTINGS, input),
+    getBrowserExecutable: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.GET_BROWSER_EXECUTABLE),
+    pickBrowserExecutable: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM.PICK_BROWSER_EXECUTABLE)
   },
   onLauncherStatusChange: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: LauncherStatusChange) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: LauncherStatusChange): void => {
       callback(payload)
     }
 

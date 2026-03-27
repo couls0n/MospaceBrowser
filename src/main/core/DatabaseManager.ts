@@ -69,6 +69,8 @@ export class DatabaseManager {
       await prisma.$connect()
     }
 
+    await this.ensureProfileColumns(prisma)
+
     this.prisma = prisma
     logger.info('Database ready at', paths.database)
 
@@ -125,5 +127,26 @@ export class DatabaseManager {
 
   private isMissingTableError(error: unknown): boolean {
     return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021'
+  }
+
+  private async ensureProfileColumns(prisma: PrismaClient): Promise<void> {
+    const tableInfo = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+      'PRAGMA table_info("Profile")'
+    )
+    const existingColumns = new Set(tableInfo.map((column) => column.name))
+
+    if (!existingColumns.has('fingerprintEnabled')) {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Profile" ADD COLUMN "fingerprintEnabled" BOOLEAN NOT NULL DEFAULT true'
+      )
+    }
+
+    if (!existingColumns.has('fingerprintOs')) {
+      await prisma.$executeRawUnsafe('ALTER TABLE "Profile" ADD COLUMN "fingerprintOs" TEXT')
+    }
+
+    if (!existingColumns.has('fingerprintConfig')) {
+      await prisma.$executeRawUnsafe('ALTER TABLE "Profile" ADD COLUMN "fingerprintConfig" TEXT')
+    }
   }
 }

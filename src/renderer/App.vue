@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { Moon, Sunny } from '@element-plus/icons-vue'
-import { DEFAULT_BROWSER_PATH } from '@shared/constants'
 import type { SystemPaths } from '@shared/types'
 import Dashboard from '@renderer/views/Dashboard.vue'
 import Settings from '@renderer/views/Settings.vue'
@@ -47,7 +46,10 @@ onMounted(async () => {
       <div class="brand-block">
         <p class="eyebrow">Workspace Browser Manager</p>
         <h1>XussBrowser</h1>
-        <p class="subcopy">Isolated local browser profiles, safe launch orchestration, and profile storage management.</p>
+        <p class="subcopy">
+          Isolated local browser profiles, persisted fingerprints, and managed Chromium launch
+          orchestration.
+        </p>
       </div>
 
       <div class="topbar-actions">
@@ -62,22 +64,13 @@ onMounted(async () => {
         />
 
         <el-tooltip content="Toggle dark mode">
-          <el-switch
-            v-model="darkMode"
-            inline-prompt
-            :active-icon="Moon"
-            :inactive-icon="Sunny"
-          />
+          <el-switch v-model="darkMode" inline-prompt :active-icon="Moon" :inactive-icon="Sunny" />
         </el-tooltip>
       </div>
     </header>
 
     <main class="content-shell">
-      <component
-        :is="currentView"
-        :browser-path="DEFAULT_BROWSER_PATH"
-        :system-paths="systemPaths"
-      />
+      <component :is="currentView" :system-paths="systemPaths" />
     </main>
   </div>
 </template>

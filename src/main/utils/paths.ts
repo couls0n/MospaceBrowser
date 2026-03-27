@@ -8,6 +8,7 @@ export interface AppPaths {
   database: string
   profiles: string
   secrets: string
+  settings: string
   schema: string
 }
 
@@ -20,6 +21,7 @@ export function getAppPaths(): AppPaths {
     database: join(userData, 'database.db'),
     profiles: join(userData, 'profiles'),
     secrets: join(userData, 'secrets'),
+    settings: join(userData, 'settings.json'),
     schema: join(process.cwd(), 'prisma', 'schema.prisma')
   }
 }

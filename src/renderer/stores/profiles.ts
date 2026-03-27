@@ -1,6 +1,11 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CreateProfileInput, DeleteProfileInput, Profile, UpdateProfileInput } from '@shared/types'
+import type {
+  CreateProfileInput,
+  DeleteProfileInput,
+  Profile,
+  UpdateProfileInput
+} from '@shared/types'
 
 export const useProfileStore = defineStore('profiles', () => {
   const profiles = ref<Profile[]>([])
@@ -31,6 +36,7 @@ export const useProfileStore = defineStore('profiles', () => {
 
   async function createProfile(input: CreateProfileInput): Promise<boolean> {
     saving.value = true
+    error.value = null
 
     try {
       const result = await window.api.db.createProfile(input)
@@ -49,6 +55,7 @@ export const useProfileStore = defineStore('profiles', () => {
 
   async function updateProfile(input: UpdateProfileInput): Promise<boolean> {
     saving.value = true
+    error.value = null
 
     try {
       const result = await window.api.db.updateProfile(input)
@@ -66,6 +73,7 @@ export const useProfileStore = defineStore('profiles', () => {
   }
 
   async function deleteProfile(input: DeleteProfileInput): Promise<boolean> {
+    error.value = null
     const result = await window.api.db.deleteProfile(input)
 
     if (!result.success) {
@@ -78,6 +86,7 @@ export const useProfileStore = defineStore('profiles', () => {
   }
 
   async function cloneProfile(id: string): Promise<boolean> {
+    error.value = null
     const result = await window.api.db.cloneProfile({ id })
 
     if (!result.success) {

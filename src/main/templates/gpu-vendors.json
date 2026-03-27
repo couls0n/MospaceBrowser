@@ -1,0 +1,42 @@
+{
+  "win10": {
+    "vendors": [
+      { "vendor": "Google Inc.", "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x00009BC4) Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 30 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 25 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 20 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 15 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 8 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics G7 (0x00008A52) Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 2 }
+    ]
+  },
+  "win11": {
+    "vendors": [
+      { "vendor": "Google Inc.", "renderer": "ANGLE (Intel, Intel(R) Iris(TM) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 35 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 20 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 20 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 10 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (AMD, AMD Radeon RX 6800 XT Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 10 },
+      { "vendor": "Google Inc.", "renderer": "ANGLE (AMD, AMD Radeon RX 7900 XTX Direct3D11 vs_5_0 ps_5_0, D3D11)", "weight": 5 }
+    ]
+  },
+  "macos": {
+    "vendors": [
+      { "vendor": "Apple Inc.", "renderer": "Apple M1", "weight": 35 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M1 Pro", "weight": 20 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M1 Max", "weight": 15 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M2", "weight": 15 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M2 Pro", "weight": 10 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M2 Max", "weight": 4 },
+      { "vendor": "Apple Inc.", "renderer": "Apple M3", "weight": 1 }
+    ]
+  },
+  "linux": {
+    "vendors": [
+      { "vendor": "Google Inc. (NVIDIA)", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti/PCIe/SSE2, OpenGL 4.5.0)", "weight": 25 },
+      { "vendor": "Google Inc. (NVIDIA)", "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.6.0)", "weight": 25 },
+      { "vendor": "Google Inc. (Intel)", "renderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)", "weight": 25 },
+      { "vendor": "Mesa", "renderer": "Mesa Intel(R) HD Graphics 530 (SKL GT2)", "weight": 20 },
+      { "vendor": "Mesa", "renderer": "AMD Radeon RX 580 (POLARIS10, DRM 3.42.0, 5.15.0, LLVM 12.0.0)", "weight": 5 }
+    ]
+  }
+}

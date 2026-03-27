@@ -1,7 +1,9 @@
-appId: com.electron.app
-productName: temp-scaffold
+appId: com.xuss.browser
+productName: XussBrowser
+copyright: Copyright © 2026
 directories:
   buildResources: build
+  output: dist
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -9,15 +11,30 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - 'node_modules/prisma/**/*'
+  - 'prisma/**/*'
+  - 'src/main/templates/**/*'
+  - 'src/main/injections/**/*'
 asarUnpack:
   - resources/**
+  - 'node_modules/prisma/**/*'
+  - 'prisma/**/*'
+  - 'src/main/templates/**/*'
+  - 'src/main/injections/**/*'
 win:
-  executableName: temp-scaffold
+  executableName: XussBrowser
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  oneClick: false
+  allowToChangeInstallationDirectory: true
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:

@@ -1,23 +1,36 @@
 import { EventEmitter } from 'node:events'
-import { access } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { createServer } from 'node:net'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
+import { join } from 'node:path'
 import { app } from 'electron'
-import { DEFAULT_BROWSER_PATH, DEFAULT_PORTS } from '@shared/constants'
-import type { BrowserInstanceInfo, LauncherStatusChange, Profile } from '@shared/types'
+import { AppSettingsManager } from '@main/core/AppSettingsManager'
+import { BrowserDebugger } from '@main/core/BrowserDebugger'
+import { ProfileManager } from '@main/core/ProfileManager'
+import { logger } from '@main/utils/logger'
+import { DEFAULT_PORTS } from '@shared/constants'
+import type {
+  BrowserInstanceInfo,
+  FingerprintConfig,
+  LauncherStatusChange,
+  Profile
+} from '@shared/types'
 
 const execFileAsync = promisify(execFile)
 
 interface ActiveBrowserInstance extends BrowserInstanceInfo {
   process: ChildProcess
+  debugger?: BrowserDebugger
 }
 
 export class BrowserLauncher extends EventEmitter {
   private static instance: BrowserLauncher | null = null
   private readonly activeInstances = new Map<string, ActiveBrowserInstance>()
   private readonly usedPorts = new Set<number>()
+  private readonly settingsManager = AppSettingsManager.getInstance()
+  private readonly profileManager = ProfileManager.getInstance()
 
   public static getInstance(): BrowserLauncher {
     if (!BrowserLauncher.instance) {
@@ -44,7 +57,8 @@ export class BrowserLauncher extends EventEmitter {
 
     const browserPath = await this.resolveBrowserPath()
     const debuggingPort = await this.acquirePort()
-    const args = this.buildChromiumArgs(profile, debuggingPort)
+    const fingerprintConfig = await this.prepareFingerprintConfig(profile)
+    const args = this.buildChromiumArgs(profile, debuggingPort, fingerprintConfig)
     const process = spawn(browserPath, args, {
       stdio: 'ignore',
       windowsHide: false
@@ -59,13 +73,15 @@ export class BrowserLauncher extends EventEmitter {
 
     try {
       const websocketUrl = await this.waitForDebuggerUrl(debuggingPort)
+      const debuggerClient = await this.initializeDebugger(profile, fingerprintConfig, websocketUrl)
       const instance: ActiveBrowserInstance = {
         pid: process.pid,
         profileId: profile.id,
         debuggingPort,
         websocketUrl,
         startTime: Date.now(),
-        process
+        process,
+        debugger: debuggerClient
       }
 
       this.activeInstances.set(profile.id, instance)
@@ -90,6 +106,8 @@ export class BrowserLauncher extends EventEmitter {
     if (!instance) {
       return
     }
+
+    await instance.debugger?.close().catch(() => undefined)
 
     if (process.platform === 'win32') {
       await execFileAsync('taskkill', ['/T', '/F', '/PID', `${instance.pid}`])
@@ -118,11 +136,42 @@ export class BrowserLauncher extends EventEmitter {
   }
 
   public getAllRunning(): BrowserInstanceInfo[] {
-    return Array.from(this.activeInstances.values()).map((instance) => this.toPublicInstance(instance))
+    return Array.from(this.activeInstances.values()).map((instance) =>
+      this.toPublicInstance(instance)
+    )
+  }
+
+  public async openVerificationPage(profileId: string): Promise<void> {
+    const instance = this.activeInstances.get(profileId)
+
+    if (!instance?.debugger) {
+      throw new Error('Profile is not running with an attached debugger session.')
+    }
+
+    await instance.debugger.openVerificationPage()
+  }
+
+  /**
+   * Prepare fingerprint configuration for a profile.
+   * Uses the persisted fingerprint when available, otherwise generates one.
+   */
+  private async prepareFingerprintConfig(profile: Profile): Promise<FingerprintConfig | undefined> {
+    if (!profile.fingerprintEnabled) {
+      return undefined
+    }
+
+    return (
+      profile.fingerprintConfig ??
+      this.profileManager.generateFingerprint({
+        seed: profile.id,
+        os: profile.fingerprintOs,
+        ip: profile.proxyConfig?.host
+      })
+    )
   }
 
   private async resolveBrowserPath(): Promise<string> {
-    const browserPath = process.env.XUSS_BROWSER_EXECUTABLE ?? DEFAULT_BROWSER_PATH
+    const browserPath = await this.settingsManager.resolveBrowserExecutablePath()
 
     try {
       await access(browserPath, fsConstants.F_OK)
@@ -132,7 +181,11 @@ export class BrowserLauncher extends EventEmitter {
     }
   }
 
-  private buildChromiumArgs(profile: Profile, debuggingPort: number): string[] {
+  private buildChromiumArgs(
+    profile: Profile,
+    debuggingPort: number,
+    fingerprintConfig?: FingerprintConfig
+  ): string[] {
     const {
       window: { width, height, pixelRatio },
       locale,
@@ -144,17 +197,31 @@ export class BrowserLauncher extends EventEmitter {
       `--remote-debugging-port=${debuggingPort}`,
       `--window-size=${width},${height}`,
       `--force-device-scale-factor=${pixelRatio}`,
-      `--lang=${locale}`,
+      `--lang=${fingerprintConfig?.software.locale ?? locale}`,
       '--no-first-run',
       '--no-default-browser-check',
-      '--password-store=basic'
+      '--password-store=basic',
+      // Anti-detection flags
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-ipc-flooding-protection',
+      '--disable-features=Translate'
     ]
 
-    if (profile.proxyConfig && profile.proxyConfig.type !== 'none') {
-      args.push(`--proxy-server=${profile.proxyConfig.type}://${profile.proxyConfig.host}:${profile.proxyConfig.port}`)
+    if (fingerprintConfig) {
+      args.push(`--user-agent=${fingerprintConfig.userAgent}`)
     }
 
-    args.push(homeUrl)
+    if (profile.proxyConfig && profile.proxyConfig.type !== 'none') {
+      args.push(
+        `--proxy-server=${profile.proxyConfig.type}://${profile.proxyConfig.host}:${profile.proxyConfig.port}`
+      )
+    }
+
+    args.push(fingerprintConfig ? 'about:blank' : homeUrl)
 
     return args
   }
@@ -167,6 +234,7 @@ export class BrowserLauncher extends EventEmitter {
         return
       }
 
+      void active.debugger?.close().catch(() => undefined)
       this.activeInstances.delete(profileId)
       this.releasePort(active.debuggingPort)
       this.emitStatus({
@@ -235,6 +303,43 @@ export class BrowserLauncher extends EventEmitter {
 
   private emitStatus(event: LauncherStatusChange): void {
     this.emit('statusChange', event)
+  }
+
+  private async initializeDebugger(
+    profile: Profile,
+    fingerprintConfig: FingerprintConfig | undefined,
+    websocketUrl: string | undefined
+  ): Promise<BrowserDebugger | undefined> {
+    if (!fingerprintConfig) {
+      return undefined
+    }
+
+    if (!websocketUrl) {
+      throw new Error('Remote debugging websocket URL was not available for fingerprint injection.')
+    }
+
+    const injectionScript = await this.buildInjectionScript(profile.id, fingerprintConfig)
+    const debuggerClient = new BrowserDebugger(
+      websocketUrl,
+      injectionScript,
+      profile.browserConfig.homeUrl
+    )
+    await debuggerClient.initialize()
+    logger.info(`Fingerprint injection ready for profile ${profile.id}`)
+
+    return debuggerClient
+  }
+
+  private async buildInjectionScript(
+    profileId: string,
+    fingerprintConfig: FingerprintConfig
+  ): Promise<string> {
+    const injectionScriptPath = join(__dirname, '../injections/fingerprint.js')
+    const template = await readFile(injectionScriptPath, 'utf-8')
+
+    return template
+      .replace('__XUSS_PROFILE_ID__', JSON.stringify(profileId))
+      .replace('__XUSS_FINGERPRINT_CONFIG__', JSON.stringify(fingerprintConfig))
   }
 
   private toPublicInstance(instance: ActiveBrowserInstance): BrowserInstanceInfo {

@@ -1,0 +1,781 @@
+以下是可直接复制给 Codex 的**完整投喂文档**，包含 5 个 Phase 的详细技术规范、代码约束和验收标准。
+
+---
+
+```markdown
+# XussBrowser指纹浏览器 - Codex 完整开发指令
+
+## 系统级全局设定（System Context）
+
+你正在开发一个名为 **XussBrowser** 的指纹浏览器（Anti-Detect Browser）。这是一个基于 Electron + Chromium 的专业级隐私工具，用于创建隔离的浏览器环境。
+
+### 核心技术栈（不可更改）
+- **主进程**: Electron 28 + Node.js 20 + TypeScript 5.3 (严格模式)
+- **渲染进程**: Vue 3.4 + TypeScript + Pinia 2 + Element Plus
+- **数据库**: Prisma 5 + SQLite (本地文件)
+- **构建**: Electron Forge + Vite
+- **安全**: Context Isolation 启用, Node Integration 禁用
+
+### 架构铁律（必须遵守）
+1. **所有 IPC 通信必须通过 Preload 脚本**, 禁止在 Renderer 直接使用 Electron/Node API
+2. **所有路径使用 Node.js path 模块**, 禁止硬编码 Windows 路径分隔符
+3. **所有数据库操作使用 Prisma Client**, 禁止直接写 SQL
+4. **所有错误必须捕获**: async/await 必须 try-catch, 返回标准错误对象
+5. **禁止 any 类型**: 所有变量必须有明确类型定义, 未知类型使用 unknown + 类型守卫
+
+### 项目文件结构（必须严格遵循）
+```
+stealthcore/
+├── src/
+│   ├── main/                    # 主进程 (Node 环境)
+│   │   ├── index.ts             # 入口
+│   │   ├── core/                # 核心业务逻辑
+│   │   │   ├── FingerprintGenerator.ts
+│   │   │   ├── BrowserLauncher.ts
+│   │   │   └── ProfileManager.ts
+│   │   ├── ipc/                 # IPC 处理器
+│   │   │   ├── index.ts         # 注册中心
+│   │   │   ├── handlers/        # 按模块分类
+│   │   │   │   ├── profile.ts
+│   │   │   │   ├── launcher.ts
+│   │   │   │   └── database.ts
+│   │   ├── utils/               # 工具函数
+│   │   │   ├── logger.ts        # electron-log 封装
+│   │   │   ├── paths.ts         # 路径管理
+│   │   │   └── encryption.ts    # 加密工具
+│   │   └── injections/          # 浏览器注入脚本
+│   │       └── fingerprint.js   # Preload 注入脚本
+│   ├── preload/                 # 预加载脚本 (隔离层)
+│   │   └── index.ts             # 唯一暴露点
+│   ├── renderer/                # 渲染进程 (Vue)
+│   │   ├── main.ts
+│   │   ├── App.vue
+│   │   ├── stores/              # Pinia Stores
+│   │   │   ├── profiles.ts
+│   │   │   └── launcher.ts
+│   │   ├── components/          # 业务组件
+│   │   │   ├── ProfileCard.vue
+│   │   │   ├── ProfileEditor.vue
+│   │   │   └── LauncherControl.vue
+│   │   └── views/
+│   │       ├── Dashboard.vue
+│   │       └── Settings.vue
+│   └── shared/                  # 共享代码 (主/渲染均可导入)
+│       ├── types.ts             # 全局类型定义
+│       ├── constants.ts         # 常量 (IPC 通道名等)
+│       └── schemas.ts           # Zod 验证 schema
+├── prisma/
+│   └── schema.prisma            # 数据库模型
+└── resources/                   # 静态资源
+    └── chromium-patch/          # Chromium 注入补丁
+```
+
+### 错误处理标准格式
+所有 IPC 调用必须返回统一格式:
+```typescript
+type IPCResponse<T> = 
+  | { success: true; data: T }
+  | { success: false; error: string; code?: string }
+```
+
+### IPC 通道命名规范
+格式: `模块:实体:动作`
+示例: `db:profile:create`, `launcher:start`, `system:path:get`
+
+---
+
+## Phase 1: 基础脚手架搭建
+
+### 阶段目标
+建立 Electron + Vue3 + Vite + Prisma 的项目基础结构，实现主进程与渲染进程的安全通信机制，配置开发环境热重载。
+
+### 技术细节
+
+#### 1.1 项目初始化命令（参考）
+```bash
+npm create electron-vite@latest stealthcore -- --template vue-ts
+cd stealthcore
+npm install prisma @prisma/client electron-log uuid
+npm install -D @types/uuid
+```
+
+#### 1.2 TypeScript 路径别名配置 (tsconfig.json)
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@main/*": ["src/main/*"],
+      "@preload/*": ["src/preload/*"],
+      "@renderer/*": ["src/renderer/*"],
+      "@shared/*": ["src/shared/*"]
+    },
+    "strict": true,
+    "noImplicitAny": true,
+    "esModuleInterop": true
+  }
+}
+```
+
+#### 1.3 IPC 架构实现要求
+
+**Preload 脚本** (src/preload/index.ts):
+- 使用 contextBridge.exposeInMainWorld 暴露 api 对象
+- 暴露 db 命名空间: 包含 createProfile, getProfiles, updateProfile, deleteProfile
+- 暴露 launcher 命名空间: 包含 start, stop, getStatus
+- 暴露 system 命名空间: 包含 getPlatform, getVersion
+- 所有方法签名: `(...args: any[]) => Promise<any>`
+
+**IPC 注册中心** (src/main/ipc/index.ts):
+- 自动扫描 handlers 目录并注册
+- 使用 ipcMain.handle 监听通道
+- 统一包装错误处理: try-catch 后返回 IPCResponse 格式
+
+#### 1.4 必须生成的文件清单
+
+1. **src/shared/constants.ts** - IPC 通道常量
+2. **src/shared/types.ts** - 基础类型定义 (Phase 1 只需基础类型)
+3. **src/preload/index.ts** - 预加载脚本
+4. **src/main/ipc/index.ts** - IPC 注册中心
+5. **src/main/utils/logger.ts** - 日志封装 (使用 electron-log)
+6. **src/main/utils/paths.ts** - 路径管理 (userData, temp 等)
+7. **src/main/index.ts** - 主进程入口 (创建窗口, 加载 URL)
+
+#### 1.5 代码规范约束
+- Preload 脚本中禁止使用 Node.js 模块 (除了 electron 的 contextBridge, ipcRenderer)
+- 主进程入口必须等待 app.whenReady()
+- 窗口配置: width: 1200, height: 800, webSecurity: true, contextIsolation: true
+
+### 验收标准
+- [ ] 运行 npm run dev 能正常启动 Electron 窗口并显示 Vue 欢迎页
+- [ ] 渲染进程中可通过 window.api.system.getPlatform() 获取系统类型
+- [ ] 主进程日志写入 userData/logs/main.log
+- [ ] 修改 Renderer 代码时热重载正常工作 (无需重启 Electron)
+
+---
+
+## Phase 2: 数据库模型与 IPC 接口层
+
+### 阶段目标
+设计并实现 SQLite 数据库模型 (Prisma Schema)，生成 TypeScript 客户端，实现所有 CRUD 操作的 IPC 接口。
+
+### 依赖
+- Phase 1 已完成 (IPC 基础设施就绪)
+- 路径: src/main/ipc/ 已存在注册机制
+
+### 技术细节
+
+#### 2.1 Prisma Schema (prisma/schema.prisma)
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL") // 指向 app.getPath('userData')/database.db
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // 指纹配置 JSON (包含 userAgent, hardware, software 等)
+  fingerprintConfig String
+  
+  // 代理配置 (可为 null)
+  proxyType   String?  // none | http | socks5 | ssh
+  proxyHost   String?
+  proxyPort   Int?
+  proxyUsername String?
+  proxyPassword String? // 存储前需加密
+  
+  // 存储路径 (相对 userData/profiles/ 的路径)
+  storagePath String   @unique
+  
+  // 分组
+  groupId     String?
+  group       Group?   @relation(fields: [groupId], references: [id])
+  
+  // 状态 (非数据库字段, 运行时的)
+  @@index([createdAt])
+  @@index([groupId])
+}
+
+model Group {
+  id          String    @id @default(uuid())
+  name        String
+  color       String    @default("#409EFF")
+  sortOrder   Int       @default(0)
+  profiles    Profile[]
+}
+
+model Proxy {
+  id          String   @id @default(uuid())
+  type        String
+  host        String
+  port        Int
+  username    String?
+  password    String?
+  countryCode String?  // ISO 3166-1 alpha-2
+  latency     Int?     // ms
+  lastChecked DateTime?
+  isActive    Boolean  @default(true)
+}
+```
+
+#### 2.2 数据库初始化逻辑 (src/main/core/DatabaseManager.ts)
+- 单例模式管理 PrismaClient
+- 初始化时检查数据库文件存在性, 不存在则创建目录并运行 migrate
+- 提供 encrypt/decrypt 方法用于敏感字段 (使用 node:crypto, AES-256-GCM)
+
+#### 2.3 IPC Handlers 实现 (src/main/ipc/handlers/)
+
+**profile.ts 必须实现**:
+- `db:profile:create` - 创建环境, 自动创建 storagePath 目录
+- `db:profile:getAll` - 获取所有环境, 支持按 groupId 过滤
+- `db:profile:getById` - 根据 ID 获取详情
+- `db:profile:update` - 更新配置
+- `db:profile:delete` - 删除环境, 可选是否删除物理文件 (recursive rmdir)
+- `db:profile:clone` - 克隆环境 (复制配置, 新生成 ID 和 storagePath)
+
+**proxy.ts 必须实现**:
+- `db:proxy:create`, `db:proxy:getAll`, `db:proxy:delete`, `db:proxy:check` (检测代理连通性)
+
+#### 2.4 共享类型定义 (src/shared/types.ts)
+
+```typescript
+// Profile 运行时类型 (从数据库 JSON 字段解析后的结构)
+export interface FingerprintConfig {
+  userAgent: string
+  secChUa?: string
+  hardware: {
+    cpuCores: number
+    memory: number  // GB
+    screen: {
+      width: number
+      height: number
+      colorDepth: number
+      pixelRatio: number
+    }
+    gpu: {
+      vendor: string
+      renderer: string
+    }
+    fonts: string[]
+  }
+  software: {
+    timezone: string  // IANA, e.g., "America/New_York"
+    locale: string    // e.g., "en-US"
+    platform: string  // "Win32", "MacIntel", "Linux x86_64"
+    doNotTrack: boolean
+  }
+  advanced: {
+    canvasNoise: number  // 0-10
+    webglNoise: boolean
+    audioNoise: boolean
+  }
+}
+
+export interface Profile {
+  id: string
+  name: string
+  createdAt: string  // ISO 8601
+  updatedAt: string
+  fingerprintConfig: FingerprintConfig  // 解析后的对象
+  proxyType?: string
+  proxyConfig?: {
+    host: string
+    port: number
+    username?: string
+    password?: string
+  }
+  storagePath: string
+  groupId?: string
+}
+```
+
+#### 2.5 Zod 验证 Schema (src/shared/schemas.ts)
+
+使用 zod 定义所有 IPC 输入验证:
+```typescript
+import { z } from 'zod'
+
+export const CreateProfileSchema = z.object({
+  name: z.string().min(1).max(100),
+  fingerprintConfig: z.object({
+    userAgent: z.string(),
+    hardware: z.object({...}),
+    // ... 详细验证
+  }),
+  proxyType: z.enum(['none', 'http', 'socks5']).optional(),
+  // ...
+})
+```
+
+### 验收标准
+- [ ] Prisma 能正确生成客户端 (npx prisma generate)
+- [ ] 数据库文件自动创建在 userData/database.db
+- [ ] 能完成完整 CRUD: 创建环境 -> 查询列表 -> 更新名称 -> 删除环境
+- [ ] 敏感字段 (proxyPassword) 存储为加密形式
+- [ ] 删除环境时勾选 "删除数据" 能递归删除物理文件夹
+- [ ] IPC 调用返回标准格式 { success, data/error }
+
+---
+
+## Phase 3: 指纹生成引擎 (FingerprintGenerator)
+
+### 阶段目标
+实现核心指纹生成算法, 确保生成的指纹符合设备真实性逻辑 (如 Win10 不会用 macOS 字体)。
+
+### 依赖
+- Phase 2 类型定义 (FingerprintConfig 接口)
+- 需读取 src/main/templates/ 下的设备模板 JSON
+
+### 技术细节
+
+#### 3.1 设备模板数据 (src/main/templates/)
+
+创建以下 JSON 文件作为真实设备数据库:
+
+**ua-templates.json**:
+```json
+[
+  {
+    "os": "win10",
+    "weight": 40,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...",
+    "secChUa": "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
+    "platform": "Win32",
+    "typicalScreens": [{"w":1920,"h":1080,"r":1}, {"w":2560,"h":1440,"r":1.25}],
+    "typicalFonts": ["Arial", "Times New Roman", "Segoe UI", ...]
+  },
+  {
+    "os": "macos",
+    "weight": 30,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...",
+    "platform": "MacIntel",
+    "typicalScreens": [{"w":2560,"h":1600,"r":2}, {"w":1920,"h":1080,"r":1}],
+    "typicalFonts": ["Helvetica", "Arial", "Times", "Lucida Grande", ...]
+  }
+]
+```
+
+**gpu-vendors.json**: 按 OS 分类的 GPU 厂商和渲染器列表
+
+#### 3.2 FingerprintGenerator 类 (src/main/core/FingerprintGenerator.ts)
+
+```typescript
+export class FingerprintGenerator {
+  private templates: UATemplate[]
+  private seedrandom: (seed: string) => () => number
+  
+  constructor() {
+    // 加载 JSON 模板
+    this.templates = JSON.parse(fs.readFileSync(...))
+  }
+  
+  generate(config: GenerationOptions): FingerprintConfig {
+    // 1. 根据 weight 随机选择 OS 模板
+    // 2. 基于模板生成硬件配置 (确保合理性)
+    // 3. 如果提供 IP, 调用 GeoIP 逻辑匹配时区
+    // 4. 使用 seed (profileId) 确保同一 ID 生成相同指纹 (一致性)
+  }
+  
+  private generateHardware(os: string, seed: string): HardwareProfile {
+    const rng = this.seedrandom(seed)
+    // CPU 核心: 合理分布 (2核40%, 4核30%, 8核20%, 16核10%)
+    // 内存: 与 CPU 匹配 (2核 unlikely 配 32GB)
+    // 屏幕: 从模板 typicalScreens 中选择, 保持比例合理
+  }
+  
+  private getTimezoneByIP(ip: string): string {
+    // 使用内置 IP 段映射表 (无需外部 API)
+    // 如 1.0.0.0-1.0.0.255 -> Australia/Sydney
+    // 返回 IANA 时区字符串
+  }
+  
+  private generateFontList(os: string, seed: string): string[] {
+    // 从模板字体中随机选择 50-150 个
+    // 确保包含该 OS 必装字体 (如 Windows 必有 Segoe UI, Arial)
+  }
+  
+  validateConsistency(config: FingerprintConfig): boolean {
+    // 验证逻辑一致性:
+    // - Win32 平台不会用 "Lucida Grande" 作为主要字体
+    // - 分辨率比例合理 (16:9, 16:10, 21:9)
+    // - 时区与语言大致匹配 (zh-CN 配 Asia/Shanghai 概率高)
+    return true/false
+  }
+}
+```
+
+#### 3.3 关键技术约束
+
+1. **随机数种子**: 使用 profileId (UUID) 作为种子, 确保同一环境指纹恒定
+2. **时区映射**: 内置常见 IP 段映射表 (无需外部 API 调用)
+3. **WebGL Vendor**: 
+   - Windows: Intel, NVIDIA, AMD
+   - macOS: Intel Inc., Apple Inc.
+   - Linux: Mesa, NVIDIA
+4. **Canvas 噪声算法**: Perlin Noise, 仅修改 RGB 最低位 (视觉不可见)
+
+### 验收标准
+- [ ] 生成 100 个指纹, 无重复 UserAgent (相同种子生成相同指纹)
+- [ ] 所有 fingerprintConfig 通过 validateConsistency 检查
+- [ ] Windows 模板不会生成 macOS 特有的字体 (如 Geneva)
+- [ ] 屏幕分辨率符合常见比例 (无 1920x1920 等异常值)
+- [ ] 生成的 JSON 可直接存入 Phase 2 的数据库字段
+
+---
+
+## Phase 4: 浏览器启动器 (BrowserLauncher)
+
+### 阶段目标
+实现 Chromium 子进程管理, 处理启动参数构建、端口分配、进程监控。
+
+### 依赖
+- Phase 3 (FingerprintConfig 结构)
+- Phase 2 (Profile 数据模型, 获取 storagePath)
+- Chromium 可执行路径: 假设为内置或系统 Chrome 路径
+
+### 技术细节
+
+#### 4.1 BrowserLauncher 类 (src/main/core/BrowserLauncher.ts)
+
+```typescript
+export interface BrowserInstance {
+  pid: number
+  profileId: string
+  debuggingPort: number
+  websocketUrl?: string  // ws://127.0.0.1:port/devtools/browser/...
+  process: ChildProcess
+  startTime: number
+}
+
+export class BrowserLauncher extends EventEmitter {
+  private activeInstances: Map<string, BrowserInstance> = new Map()
+  private portPool: number[] = []  // 9223-9323
+  
+  constructor() {
+    super()
+    this.initPortPool()
+    this.setupProcessCleanup()
+  }
+  
+  async launch(profile: Profile): Promise<BrowserInstance> {
+    // 1. 检查是否已运行
+    // 2. 分配调试端口 (acquirePort)
+    // 3. 构建启动参数 (buildChromiumArgs)
+    // 4. spawn 子进程
+    // 5. 等待调试端口就绪 (pollDebuggerPort)
+    // 6. 获取 WebSocket URL (fetchDebuggerURL)
+    // 7. 存入 activeInstances, 发送状态事件
+  }
+  
+  async terminate(profileId: string): Promise<void> {
+    // 1. 获取 instance
+    // 2. kill 进程树 (Windows: taskkill /T /F /PID, Unix: kill -9 -pid)
+    // 3. 清理 activeInstances, 释放端口
+    // 4. 发送 'stopped' 事件
+  }
+  
+  private buildChromiumArgs(profile: Profile, port: number): string[] {
+    const args = [
+      `--user-data-dir=${profile.storagePath}`,
+      `--remote-debugging-port=${port}`,
+      `--window-size=${profile.fingerprintConfig.hardware.screen.width},${profile.fingerprintConfig.hardware.screen.height}`,
+      `--force-device-scale-factor=${profile.fingerprintConfig.hardware.screen.pixelRatio}`,
+      `--lang=${profile.fingerprintConfig.software.locale}`,
+      `--disable-blink-features=AutomationControlled`,
+      `--disable-features=IsolateOrigins,site-per-process`,
+      `--disable-background-timer-throttling`,
+      `--disable-renderer-backgrounding`,
+      `--disable-backgrounding-occluded-windows`,
+      `--disable-ipc-flooding-protection`,
+      `--password-store=basic`,  // 禁用系统钥匙串, 避免弹窗
+      `--disable-features=Translate`,
+    ]
+    
+    // 代理配置
+    if (profile.proxyType && profile.proxyType !== 'none' && profile.proxyConfig) {
+      const { host, port: proxyPort } = profile.proxyConfig
+      args.push(`--proxy-server=${profile.proxyType}://${host}:${proxyPort}`)
+      
+      // 如果代理需要认证, 需要额外处理 (Chromium 会弹出认证框, 或我们用扩展自动处理)
+    }
+    
+    // WebRTC 控制 (通过 prefs 或命令行)
+    // 注意: 禁用 WebRTC 泄露需要更多配置, 此处先预留
+    
+    // 环境变量注入
+    // STEALTHCORE_PROFILE_ID=profile.id
+    
+    return args
+  }
+  
+  private async acquirePort(): Promise<number> {
+    // 从 9223 开始找可用端口, 使用 net.createServer().listen() 测试
+    // 返回第一个可用端口, 标记为已占用
+  }
+  
+  private releasePort(port: number): void
+  
+  private async fetchDebuggerURL(port: number): Promise<string> {
+    // 访问 http://127.0.0.1:${port}/json/version
+    // 返回 webSocketDebuggerUrl
+  }
+  
+  private setupProcessCleanup() {
+    // app.on('before-quit', () => this.terminateAll())
+    // 监听 instance.process.on('exit'), 自动清理 Map 并发送事件
+  }
+  
+  isRunning(profileId: string): boolean
+  getInstance(profileId: string): BrowserInstance | undefined
+  getAllRunning(): BrowserInstance[]
+}
+```
+
+#### 4.2 IPC 暴露 (src/main/ipc/handlers/launcher.ts)
+
+通道:
+- `launcher:start` (payload: { profileId: string }) -> BrowserInstance
+- `launcher:stop` (payload: { profileId: string }) -> void
+- `launcher:getStatus` (payload: { profileId: string }) -> 'running' | 'stopped'
+- `launcher:getAllRunning` () -> BrowserInstance[] (不含 process 对象, 因为无法序列化)
+
+事件推送 (主进程 -> 渲染进程):
+- `launcher:statusChange` (payload: { profileId, status: 'started' | 'stopped' | 'crashed', data?: any })
+
+#### 4.3 注入脚本集成
+
+启动时必须指定:
+```typescript
+args.push(`--preload=${path.join(__dirname, '../injections/fingerprint.js')}`)
+```
+
+fingerprint.js 内容需能读取环境变量 STEALTHCORE_PROFILE_ID, 然后从已知位置 (或 IPC) 获取指纹配置并应用。
+
+### 验收标准
+- [ ] 能启动 Chromium 并打开指定 user-data-dir
+- [ ] 能正确获取 debuggingPort 和 websocketUrl
+- [ ] 启动 5 个实例, 每个实例端口不同且不冲突
+- [ ] 主进程退出时自动终止所有 Chromium 进程 (无残留)
+- [ ] Chromium 崩溃时能检测到并发送 'crashed' 状态事件
+- [ ] 代理配置正确传递到 Chromium (通过 --proxy-server)
+
+---
+
+## Phase 5: Vue3 前端界面
+
+### 阶段目标
+实现用户界面, 对接所有 IPC 接口, 实现响应式状态管理和实时状态更新。
+
+### 依赖
+- Phase 1-4 全部完成 (IPC API 可用)
+- 类型定义: src/shared/types.ts
+
+### 技术细节
+
+#### 5.1 Pinia Store 实现
+
+**stores/profiles.ts**:
+```typescript
+import { defineStore } from 'pinia'
+import type { Profile } from '@shared/types'
+
+export const useProfileStore = defineStore('profiles', {
+  state: () => ({
+    profiles: [] as Profile[],
+    loading: false,
+    error: null as string | null
+  }),
+  
+  getters: {
+    getProfileById: (state) => (id: string) => state.profiles.find(p => p.id === id),
+    groupedProfiles: (state) => {
+      // 按 groupId 分组返回
+    }
+  },
+  
+  actions: {
+    async loadProfiles() {
+      this.loading = true
+      const res = await window.api.db.getProfiles()
+      if (res.success) this.profiles = res.data
+      else this.error = res.error
+      this.loading = false
+    },
+    
+    async createProfile(data: CreateProfileData) {
+      const res = await window.api.db.createProfile(data)
+      if (res.success) await this.loadProfiles()
+      return res
+    },
+    
+    // update, delete 类似...
+  }
+})
+```
+
+**stores/launcher.ts**:
+```typescript
+export const useLauncherStore = defineStore('launcher', {
+  state: () => ({
+    runningInstances: new Map<string, BrowserInstance>()
+  }),
+  
+  actions: {
+    async startProfile(profileId: string) {
+      const res = await window.api.launcher.start({ profileId })
+      if (res.success) {
+        this.runningInstances.set(profileId, res.data)
+        // 订阅状态更新
+      }
+    },
+    
+    async stopProfile(profileId: string) {
+      await window.api.launcher.stop({ profileId })
+      this.runningInstances.delete(profileId)
+    },
+    
+    setupListeners() {
+      // 监听 window.api.onLauncherStatusChange((evt, data) => { ... })
+      // 更新 runningInstances 状态
+    }
+  }
+})
+```
+
+#### 5.2 组件实现清单
+
+**Dashboard.vue** (主视图):
+- 网格布局显示 ProfileCard
+- 顶部工具栏: [创建环境] [批量导入] [刷新]
+- 分组筛选侧边栏
+
+**ProfileCard.vue**:
+Props: `profile: Profile`, `isRunning: boolean`
+功能:
+- 显示 OS 图标 (根据 userAgent 解析)
+- 显示分辨率、时区摘要
+- 显示代理状态 (绿/灰点)
+- 操作按钮: 
+  - 未运行: [启动] [编辑] [删除]
+  - 运行中: [停止] [查看] [调试链接复制]
+- 状态指示器: 运行中时显示绿点和 PID
+
+**ProfileEditor.vue** (向导式):
+步骤:
+1. 基础信息 (名称、选择 OS)
+2. 指纹配置 (显示 FingerprintGenerator 预览, 可手动调整 UA、分辨率等)
+3. 代理设置 (类型选择、表单验证)
+4. 确认创建
+
+使用 Element Plus 的 El-Steps + El-Form
+
+#### 5.3 类型声明增强 (src/renderer/env.d.ts)
+
+```typescript
+import type { IPCResponse, Profile, BrowserInstance } from '@shared/types'
+
+declare global {
+  interface Window {
+    api: {
+      db: {
+        getProfiles: () => Promise<IPCResponse<Profile[]>>
+        createProfile: (data: any) => Promise<IPCResponse<Profile>>
+        // ... 其他方法
+      }
+      launcher: {
+        start: (opts: { profileId: string }) => Promise<IPCResponse<BrowserInstance>>
+        stop: (opts: { profileId: string }) => Promise<IPCResponse<void>>
+        getStatus: (opts: { profileId: string }) => Promise<IPCResponse<string>>
+      }
+      onLauncherStatusChange: (callback: (data: { profileId: string, status: string }) => void) => void
+      // ... 其他
+    }
+  }
+}
+```
+
+### 验收标准
+- [ ] Dashboard 能正确显示所有环境卡片, 加载状态有骨架屏
+- [ ] 点击"创建"能打开向导, 完成三步创建后出现在列表中
+- [ ] 点击"启动"按钮后, 按钮变为"停止" (红色), 卡片显示运行状态 (PID、端口)
+- [ ] 启动状态持久化: 刷新页面后仍能显示正在运行的实例 (通过 IPC 查询)
+- [ ] 进程崩溃时 (非正常停止), UI 自动感知并恢复按钮状态为"启动"
+- [ ] 分辨率、时区等数据显示正确格式化
+- [ ] 支持深色/浅色模式切换 (Element Plus 内置)
+
+---
+
+## 附录 A: 共享常量定义 (src/shared/constants.ts)
+
+```typescript
+export const IPC_CHANNELS = {
+  DB: {
+    PROFILE_CREATE: 'db:profile:create',
+    PROFILE_GET_ALL: 'db:profile:getAll',
+    PROFILE_GET_BY_ID: 'db:profile:getById',
+    PROFILE_UPDATE: 'db:profile:update',
+    PROFILE_DELETE: 'db:profile:delete',
+    PROFILE_CLONE: 'db:profile:clone',
+  },
+  LAUNCHER: {
+    START: 'launcher:start',
+    STOP: 'launcher:stop',
+    GET_STATUS: 'launcher:getStatus',
+    GET_ALL_RUNNING: 'launcher:getAllRunning',
+    STATUS_CHANGE: 'launcher:statusChange', // 事件
+  },
+  SYSTEM: {
+    GET_VERSION: 'system:getVersion',
+    GET_PATH: 'system:getPath',
+    OPEN_DIRECTORY: 'system:openDirectory',
+  }
+} as const
+
+export const DEFAULT_PORTS = {
+  DEBUGGER_MIN: 9223,
+  DEBUGGER_MAX: 9323,
+}
+
+export const OS_TYPES = {
+  WIN10: 'win10',
+  WIN11: 'win11',
+  MACOS: 'macos',
+  LINUX: 'linux',
+} as const
+```
+
+---
+
+## 附录 B: 开发规范检查清单
+
+Codex 每完成一个文件, 请自我检查:
+1. [ ] 所有导入使用 @alias, 不使用相对路径 ../../../
+2. [ ] 所有 async 函数有 try-catch, 错误返回 { success: false, error: message }
+3. [ ] 没有使用 any 类型
+4. [ ] 数据库操作使用 Prisma, 没有手写 SQL
+5. [ ] 路径处理使用 path.join()
+6. [ ] IPC 通道名使用 IPC_CHANNELS 常量, 没有硬编码字符串
+7. [ ] 类和方法有 JSDoc 注释说明参数和返回值
+
+---
+
+## 执行指令
+
+请按以下顺序执行:
+1. 先确认理解全局架构和约束 (回复"已理解")
+2. 依次完成 Phase 1 到 Phase 5
+3. 每个 Phase 完成后, 提供简要总结说明实现了哪些文件和关键功能
+4. 如果遇到依赖缺失 (如需要上游类型定义), 请明确说明需要什么
+
+现在开始 Phase 1 的实现。
+```
+

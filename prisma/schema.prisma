@@ -12,6 +12,9 @@ model Profile {
   name           String
   notes          String?
   browserConfig  String
+  fingerprintEnabled Boolean @default(true)
+  fingerprintOs  String?
+  fingerprintConfig String?
   proxyType      String?
   proxyHost      String?
   proxyPort      Int?

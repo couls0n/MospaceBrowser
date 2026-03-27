@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CopyDocument, FolderOpened, RefreshRight } from '@element-plus/icons-vue'
+import { CopyDocument, FolderOpened, RefreshRight, View } from '@element-plus/icons-vue'
 import LauncherControl from '@renderer/components/LauncherControl.vue'
 import type { BrowserInstanceInfo, Profile } from '@shared/types'
 
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   clone: [id: string]
   start: [id: string]
   stop: [id: string]
+  verify: [id: string]
   openDir: [path: string]
 }>()
 
@@ -30,7 +31,19 @@ const proxyLabel = computed(() => {
 
 const windowLabel = computed(() => {
   const { width, height, pixelRatio } = props.profile.browserConfig.window
-  return `${width} × ${height} · ${pixelRatio}x`
+  return `${width} x ${height} · ${pixelRatio}x`
+})
+
+const fingerprintLabel = computed(() => {
+  if (!props.profile.fingerprintEnabled) {
+    return 'Disabled'
+  }
+
+  if (props.profile.fingerprintOs) {
+    return `Enabled · ${props.profile.fingerprintOs}`
+  }
+
+  return 'Enabled · random OS'
 })
 
 async function copyDebuggerLink(): Promise<void> {
@@ -56,7 +69,10 @@ async function copyDebuggerLink(): Promise<void> {
     </div>
 
     <p class="profile-card__notes">
-      {{ profile.notes || 'No notes yet. Use this environment for a dedicated local browsing workspace.' }}
+      {{
+        profile.notes ||
+        'No notes yet. Use this environment for a dedicated local browsing workspace.'
+      }}
     </p>
 
     <div class="profile-card__stats">
@@ -76,6 +92,10 @@ async function copyDebuggerLink(): Promise<void> {
         <span class="profile-card__label">Proxy</span>
         <strong>{{ proxyLabel }}</strong>
       </div>
+      <div>
+        <span class="profile-card__label">Fingerprint</span>
+        <strong>{{ fingerprintLabel }}</strong>
+      </div>
     </div>
 
     <div v-if="instance" class="profile-card__instance">
@@ -94,6 +114,10 @@ async function copyDebuggerLink(): Promise<void> {
       <el-button @click="emit('clone', profile.id)">
         <el-icon><RefreshRight /></el-icon>
         Clone
+      </el-button>
+      <el-button :disabled="!instance" @click="emit('verify', profile.id)">
+        <el-icon><View /></el-icon>
+        Verify
       </el-button>
       <el-button @click="emit('openDir', profile.storagePath)">
         <el-icon><FolderOpened /></el-icon>

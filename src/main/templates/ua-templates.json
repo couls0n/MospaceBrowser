@@ -1,0 +1,151 @@
+[
+  {
+    "os": "win10",
+    "osVersion": "Windows NT 10.0; Win64; x64",
+    "weight": 40,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "secChUa": "\\"Not_A Brand\\";v=\\"8\\", \\"Chromium\\";v=\\"120\\", \\"Google Chrome\\";v=\\"120\\"",
+    "platform": "Win32",
+    "typicalScreens": [
+      { "width": 1920, "height": 1080, "pixelRatio": 1 },
+      { "width": 2560, "height": 1440, "pixelRatio": 1.25 },
+      { "width": 3840, "height": 2160, "pixelRatio": 1.5 },
+      { "width": 1366, "height": 768, "pixelRatio": 1 },
+      { "width": 1600, "height": 900, "pixelRatio": 1 }
+    ],
+    "typicalFonts": [
+      "Arial", "Times New Roman", "Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol",
+      "Calibri", "Cambria", "Comic Sans MS", "Courier New", "Georgia",
+      "Impact", "Lucida Console", "Lucida Sans Unicode", "Microsoft Sans Serif",
+      "Palatino Linotype", "Tahoma", "Trebuchet MS", "Verdana", "Webdings",
+      "Wingdings", "Consolas", "Constantia", "Corbel", "Franklin Gothic Medium"
+    ],
+    "cpuDistribution": [
+      { "cores": 2, "weight": 15 },
+      { "cores": 4, "weight": 40 },
+      { "cores": 6, "weight": 25 },
+      { "cores": 8, "weight": 15 },
+      { "cores": 12, "weight": 4 },
+      { "cores": 16, "weight": 1 }
+    ],
+    "memoryDistribution": [
+      { "gb": 4, "weight": 10, "maxCores": 4 },
+      { "gb": 8, "weight": 35, "maxCores": 8 },
+      { "gb": 16, "weight": 35, "maxCores": 16 },
+      { "gb": 32, "weight": 15, "maxCores": 16 },
+      { "gb": 64, "weight": 5, "maxCores": 16 }
+    ]
+  },
+  {
+    "os": "win11",
+    "osVersion": "Windows NT 10.0; Win64; x64",
+    "weight": 25,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "secChUa": "\\"Not_A Brand\\";v=\\"8\\", \\"Chromium\\";v=\\"120\\", \\"Google Chrome\\";v=\\"120\\"",
+    "platform": "Win32",
+    "typicalScreens": [
+      { "width": 1920, "height": 1080, "pixelRatio": 1 },
+      { "width": 2560, "height": 1440, "pixelRatio": 1.25 },
+      { "width": 3840, "height": 2160, "pixelRatio": 1.5 },
+      { "width": 3440, "height": 1440, "pixelRatio": 1 },
+      { "width": 2560, "height": 1080, "pixelRatio": 1 }
+    ],
+    "typicalFonts": [
+      "Arial", "Times New Roman", "Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol",
+      "Calibri", "Cambria", "Comic Sans MS", "Courier New", "Georgia",
+      "Impact", "Lucida Console", "Lucida Sans Unicode", "Microsoft Sans Serif",
+      "Palatino Linotype", "Tahoma", "Trebuchet MS", "Verdana", "Webdings",
+      "Wingdings", "Consolas", "Constantia", "Corbel", "Segoe Fluent Icons",
+      "Segoe UI Variable", "Segoe UI Variable Small", "Segoe UI Variable Text"
+    ],
+    "cpuDistribution": [
+      { "cores": 4, "weight": 20 },
+      { "cores": 6, "weight": 30 },
+      { "cores": 8, "weight": 30 },
+      { "cores": 12, "weight": 12 },
+      { "cores": 16, "weight": 6 },
+      { "cores": 24, "weight": 2 }
+    ],
+    "memoryDistribution": [
+      { "gb": 8, "weight": 15, "maxCores": 8 },
+      { "gb": 16, "weight": 45, "maxCores": 16 },
+      { "gb": 32, "weight": 30, "maxCores": 24 },
+      { "gb": 64, "weight": 10, "maxCores": 24 }
+    ]
+  },
+  {
+    "os": "macos",
+    "osVersion": "Macintosh; Intel Mac OS X 10_15_7",
+    "weight": 25,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "secChUa": "\\"Not_A Brand\\";v=\\"8\\", \\"Chromium\\";v=\\"120\\", \\"Google Chrome\\";v=\\"120\\"",
+    "platform": "MacIntel",
+    "typicalScreens": [
+      { "width": 2560, "height": 1600, "pixelRatio": 2 },
+      { "width": 2880, "height": 1800, "pixelRatio": 2 },
+      { "width": 1920, "height": 1080, "pixelRatio": 1 },
+      { "width": 3840, "height": 2160, "pixelRatio": 2 },
+      { "width": 1680, "height": 1050, "pixelRatio": 2 },
+      { "width": 1440, "height": 900, "pixelRatio": 2 }
+    ],
+    "typicalFonts": [
+      "Helvetica", "Arial", "Times", "Times New Roman", "Lucida Grande",
+      "Courier", "Courier New", "Georgia", "Verdana", "Geneva",
+      "Monaco", "Impact", "Palatino", "Book Antiqua", "Trebuchet MS",
+      "Arial Black", "Charcoal", "Gadget", "Helvetica Neue", "SF Pro Display",
+      "SF Pro Text", "SF Mono", "Apple Color Emoji", "Apple Symbols", "Hoefler Text",
+      "Baskerville", "Didot", "Futura", "Optima", "Big Caslon"
+    ],
+    "cpuDistribution": [
+      { "cores": 4, "weight": 15 },
+      { "cores": 6, "weight": 25 },
+      { "cores": 8, "weight": 35 },
+      { "cores": 10, "weight": 15 },
+      { "cores": 12, "weight": 8 },
+      { "cores": 16, "weight": 2 }
+    ],
+    "memoryDistribution": [
+      { "gb": 8, "weight": 15, "maxCores": 8 },
+      { "gb": 16, "weight": 50, "maxCores": 16 },
+      { "gb": 32, "weight": 30, "maxCores": 16 },
+      { "gb": 64, "weight": 5, "maxCores": 16 }
+    ]
+  },
+  {
+    "os": "linux",
+    "osVersion": "X11; Linux x86_64",
+    "weight": 10,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "secChUa": "\\"Not_A Brand\\";v=\\"8\\", \\"Chromium\\";v=\\"120\\", \\"Google Chrome\\";v=\\"120\\"",
+    "platform": "Linux x86_64",
+    "typicalScreens": [
+      { "width": 1920, "height": 1080, "pixelRatio": 1 },
+      { "width": 2560, "height": 1440, "pixelRatio": 1 },
+      { "width": 3840, "height": 2160, "pixelRatio": 1.5 },
+      { "width": 1366, "height": 768, "pixelRatio": 1 },
+      { "width": 1600, "height": 900, "pixelRatio": 1 }
+    ],
+    "typicalFonts": [
+      "DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono", "Liberation Sans",
+      "Liberation Serif", "Liberation Mono", "Noto Sans", "Noto Serif",
+      "Ubuntu", "Ubuntu Condensed", "Ubuntu Mono", "Cantarell",
+      "Droid Sans", "Droid Serif", "Droid Sans Mono", "Roboto",
+      "Open Sans", "FreeSans", "FreeSerif", "FreeMono", "Bitstream Vera Sans"
+    ],
+    "cpuDistribution": [
+      { "cores": 2, "weight": 10 },
+      { "cores": 4, "weight": 35 },
+      { "cores": 6, "weight": 25 },
+      { "cores": 8, "weight": 20 },
+      { "cores": 12, "weight": 8 },
+      { "cores": 16, "weight": 2 }
+    ],
+    "memoryDistribution": [
+      { "gb": 4, "weight": 15, "maxCores": 4 },
+      { "gb": 8, "weight": 30, "maxCores": 8 },
+      { "gb": 16, "weight": 35, "maxCores": 16 },
+      { "gb": 32, "weight": 15, "maxCores": 16 },
+      { "gb": 64, "weight": 5, "maxCores": 16 }
+    ]
+  }
+]

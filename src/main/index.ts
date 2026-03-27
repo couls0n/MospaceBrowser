@@ -74,7 +74,8 @@ async function bootstrap(): Promise<void> {
   })
 }
 
-app.whenReady()
+app
+  .whenReady()
   .then(() => {
     void bootstrap()
   })

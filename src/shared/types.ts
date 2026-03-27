@@ -5,6 +5,8 @@ export type IPCResponse<T> =
 export type ProxyType = 'none' | 'http' | 'https' | 'socks5'
 export type ColorScheme = 'system' | 'light' | 'dark'
 export type LauncherStatus = 'started' | 'stopped' | 'crashed'
+export type OSType = 'win10' | 'win11' | 'macos' | 'linux'
+export type BrowserPathSource = 'environment' | 'settings' | 'default'
 
 export interface BrowserWindowConfig {
   width: number
@@ -36,6 +38,9 @@ export interface Profile {
   updatedAt: string
   browserConfig: BrowserProfileConfig
   proxyConfig?: ProfileProxyConfig
+  fingerprintEnabled: boolean
+  fingerprintOs?: OSType
+  fingerprintConfig?: FingerprintConfig
   storagePath: string
   groupId?: string
 }
@@ -45,6 +50,9 @@ export interface CreateProfileInput {
   notes?: string
   browserConfig: BrowserProfileConfig
   proxyConfig?: ProfileProxyConfig
+  fingerprintEnabled?: boolean
+  fingerprintOs?: OSType
+  fingerprintConfig?: FingerprintConfig
   groupId?: string
 }
 
@@ -54,6 +62,9 @@ export interface UpdateProfileInput {
   notes?: string
   browserConfig?: BrowserProfileConfig
   proxyConfig?: ProfileProxyConfig
+  fingerprintEnabled?: boolean
+  fingerprintOs?: OSType
+  fingerprintConfig?: FingerprintConfig
   groupId?: string
 }
 
@@ -121,4 +132,122 @@ export interface SystemPaths {
   logs: string
   database: string
   profiles: string
+}
+
+export interface AppSettings {
+  browserExecutablePath?: string
+}
+
+export interface BrowserExecutablePathInfo {
+  configuredPath?: string
+  resolvedPath: string
+  source: BrowserPathSource
+}
+
+// ============================================
+// Fingerprint Generation Types (Phase 3)
+// ============================================
+
+/**
+ * Screen configuration for fingerprint generation.
+ */
+export interface ScreenConfig {
+  width: number
+  height: number
+  colorDepth: number
+  pixelRatio: number
+}
+
+/**
+ * GPU information for fingerprint generation.
+ */
+export interface GpuInfo {
+  vendor: string
+  renderer: string
+}
+
+/**
+ * Hardware profile containing device specifications.
+ */
+export interface HardwareProfile {
+  cpuCores: number
+  memory: number // GB
+  screen: ScreenConfig
+}
+
+/**
+ * Advanced fingerprint settings for anti-detection.
+ */
+export interface AdvancedFingerprintSettings {
+  canvasNoise: number // 0-10
+  webglNoise: boolean
+  audioNoise: boolean
+}
+
+/**
+ * Software fingerprint settings.
+ */
+export interface SoftwareFingerprintSettings {
+  timezone: string // IANA timezone, e.g., "America/New_York"
+  locale: string // e.g., "en-US"
+  platform: string // "Win32", "MacIntel", "Linux x86_64"
+  doNotTrack: boolean
+}
+
+/**
+ * Hardware fingerprint settings.
+ */
+export interface HardwareFingerprintSettings {
+  cpuCores: number
+  memory: number // GB
+  screen: ScreenConfig
+  gpu: GpuInfo
+  fonts: string[]
+}
+
+/**
+ * Complete fingerprint configuration.
+ */
+export interface FingerprintConfig {
+  userAgent: string
+  secChUa?: string
+  hardware: HardwareFingerprintSettings
+  software: SoftwareFingerprintSettings
+  advanced: AdvancedFingerprintSettings
+}
+
+/**
+ * Options for generating a fingerprint.
+ */
+export interface FingerprintGenerationOptions {
+  seed: string // Profile ID used as seed for deterministic generation
+  ip?: string // Optional IP for timezone/geo matching
+  os?: OSType // Optional preferred OS
+}
+
+/**
+ * Fingerprint template for a specific OS.
+ */
+export interface FingerprintTemplate {
+  os: OSType
+  osVersion: string
+  weight: number
+  userAgent: string
+  secChUa: string
+  platform: string
+  typicalScreens: Array<{
+    width: number
+    height: number
+    pixelRatio: number
+  }>
+  typicalFonts: string[]
+  cpuDistribution: Array<{
+    cores: number
+    weight: number
+  }>
+  memoryDistribution: Array<{
+    gb: number
+    weight: number
+    maxCores: number
+  }>
 }

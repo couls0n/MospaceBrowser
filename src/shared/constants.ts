@@ -16,15 +16,24 @@ export const IPC_CHANNELS = {
   LAUNCHER: {
     START: 'launcher:start',
     STOP: 'launcher:stop',
+    VERIFY: 'launcher:verify',
     GET_STATUS: 'launcher:getStatus',
     GET_ALL_RUNNING: 'launcher:getAllRunning',
     STATUS_CHANGE: 'launcher:statusChange'
+  },
+  FINGERPRINT: {
+    GENERATE: 'fingerprint:generate',
+    VALIDATE: 'fingerprint:validate'
   },
   SYSTEM: {
     GET_PLATFORM: 'system:getPlatform',
     GET_VERSION: 'system:getVersion',
     GET_PATHS: 'system:getPaths',
-    OPEN_DIRECTORY: 'system:openDirectory'
+    OPEN_DIRECTORY: 'system:openDirectory',
+    GET_SETTINGS: 'system:getSettings',
+    UPDATE_SETTINGS: 'system:updateSettings',
+    GET_BROWSER_EXECUTABLE: 'system:getBrowserExecutable',
+    PICK_BROWSER_EXECUTABLE: 'system:pickBrowserExecutable'
   }
 } as const
 
@@ -47,3 +56,10 @@ export const DEFAULT_BROWSER_CONFIG: BrowserProfileConfig = {
     pixelRatio: 1
   }
 }
+
+export const OS_TYPES = {
+  WIN10: 'win10',
+  WIN11: 'win11',
+  MACOS: 'macos',
+  LINUX: 'linux'
+} as const
