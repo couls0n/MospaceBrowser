@@ -112,6 +112,7 @@ interface TimezoneMappingData {
 const DEFAULT_CHROMIUM_VERSION = '142.0.7444.175'
 const DEFAULT_GREASE_BRAND_VERSION = '8'
 const DEVICE_MEMORY_BUCKETS = [0.25, 0.5, 1, 2, 4, 8]
+const VALID_SCREEN_RATIOS = [1.78, 1.6, 2.33, 1.33, 1.25, 1.5]
 
 /**
  * FingerprintGenerator generates realistic browser fingerprints based on device templates.
@@ -155,7 +156,7 @@ export class FingerprintGenerator {
    * @returns FingerprintConfig object
    */
   public generate(options: FingerprintGenerationOptions): FingerprintConfig {
-    const { seed, ip, os: preferredOs } = options
+    const { seed, ip, os: preferredOs, locale: preferredLocale, timezone: preferredTimezone } = options
     const rng = createSeededRandom(seed)
 
     // 1. Select OS template based on weight or preference
@@ -170,12 +171,14 @@ export class FingerprintGenerator {
     const hardware = this.generateHardware(template, seed)
 
     // 4. Determine timezone and locale from IP if provided, otherwise from template
-    const { timezone, locale } = ip
+    const derivedLocation = ip
       ? this.getTimezoneByIP(ip)
       : {
           timezone: this.getRandomTimezone(template.os, rng),
           locale: this.getRandomLocale(template.os, rng)
         }
+    const timezone = preferredTimezone ?? derivedLocation.timezone
+    const locale = preferredLocale ?? derivedLocation.locale
 
     // 5. Generate font list based on OS
     const fonts = this.generateFontList(template, seed)
@@ -203,7 +206,9 @@ export class FingerprintGenerator {
       advanced: {
         canvasNoise: Math.floor(rng() * 5) + 1, // 1-5 range for canvas noise
         webglNoise: rng() > 0.5,
-        audioNoise: rng() > 0.5
+        audioNoise: rng() > 0.5,
+        clientRectsNoise: rng() > 0.35,
+        speechVoicesNoise: rng() > 0.55
       }
     }
 
@@ -239,9 +244,7 @@ export class FingerprintGenerator {
     const { width, height } = config.hardware.screen
     const ratio = width / height
 
-    // Common ratios: 16:9 (1.78), 16:10 (1.6), 21:9 (2.33), 4:3 (1.33)
-    const validRatios = [1.78, 1.6, 2.33, 1.33, 1.25, 1.5]
-    const isValidRatio = validRatios.some((r) => Math.abs(ratio - r) < 0.1)
+    const isValidRatio = VALID_SCREEN_RATIOS.some((r) => Math.abs(ratio - r) < 0.1)
 
     if (!isValidRatio) {
       return false
@@ -261,16 +264,13 @@ export class FingerprintGenerator {
       }
     }
 
-    // Check CPU and memory compatibility
     const { cpuCores, memory } = config.hardware
 
-    // 2-core CPUs unlikely to have 64GB RAM
-    if (cpuCores <= 2 && memory >= 64) {
+    if (!Number.isInteger(cpuCores) || cpuCores < 1 || cpuCores > 64) {
       return false
     }
 
-    // High-core CPUs unlikely to have low RAM
-    if (cpuCores >= 16 && memory <= 8) {
+    if (!DEVICE_MEMORY_BUCKETS.includes(memory)) {
       return false
     }
 

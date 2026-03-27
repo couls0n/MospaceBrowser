@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 import { defineStore } from 'pinia'
 import type { FingerprintConfig, FingerprintGenerationOptions, OSType } from '@shared/types'
 
@@ -11,7 +11,7 @@ export const useFingerprintStore = defineStore('fingerprint', () => {
 
   async function generateFingerprint(
     seed: string,
-    options: { ip?: string; os?: OSType } = {}
+    options: { ip?: string; os?: OSType; locale?: string; timezone?: string; apply?: boolean } = {}
   ): Promise<FingerprintConfig | null> {
     loading.value = true
     error.value = null
@@ -20,7 +20,9 @@ export const useFingerprintStore = defineStore('fingerprint', () => {
       const payload: FingerprintGenerationOptions = {
         seed,
         ip: options.ip,
-        os: options.os
+        os: options.os,
+        locale: options.locale,
+        timezone: options.timezone
       }
 
       const result = await window.api.fingerprint.generate(payload)
@@ -30,7 +32,10 @@ export const useFingerprintStore = defineStore('fingerprint', () => {
         return null
       }
 
-      currentFingerprint.value = result.data
+      if (options.apply !== false) {
+        currentFingerprint.value = result.data
+      }
+
       return result.data
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Unknown error generating fingerprint'
@@ -42,9 +47,17 @@ export const useFingerprintStore = defineStore('fingerprint', () => {
 
   async function validateFingerprint(config: FingerprintConfig): Promise<boolean> {
     try {
-      const result = await window.api.fingerprint.validate(config)
+      const payload = structuredClone(toRaw(config))
+      const result = await window.api.fingerprint.validate(payload)
+
+      if (!result.success) {
+        error.value = result.error
+        return false
+      }
+
       return result.success && result.data
-    } catch {
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Unknown error validating fingerprint'
       return false
     }
   }

@@ -182,6 +182,8 @@ export interface AdvancedFingerprintSettings {
   canvasNoise: number // 0-10
   webglNoise: boolean
   audioNoise: boolean
+  clientRectsNoise: boolean
+  speechVoicesNoise: boolean
 }
 
 /**
@@ -223,6 +225,8 @@ export interface FingerprintGenerationOptions {
   seed: string // Profile ID used as seed for deterministic generation
   ip?: string // Optional IP for timezone/geo matching
   os?: OSType // Optional preferred OS
+  locale?: string
+  timezone?: string
 }
 
 /**

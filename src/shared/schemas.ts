@@ -41,7 +41,9 @@ export const FingerprintConfigSchema = z.object({
   advanced: z.object({
     canvasNoise: z.number().min(0).max(10),
     webglNoise: z.boolean(),
-    audioNoise: z.boolean()
+    audioNoise: z.boolean(),
+    clientRectsNoise: z.boolean(),
+    speechVoicesNoise: z.boolean()
   })
 })
 
@@ -126,7 +128,9 @@ export const CheckProxySchema = z.object({
 export const GenerateFingerprintSchema = z.object({
   seed: z.string().min(1),
   ip: z.string().ip().optional(),
-  os: z.enum(['win10', 'win11', 'macos', 'linux']).optional()
+  os: z.enum(['win10', 'win11', 'macos', 'linux']).optional(),
+  locale: z.string().min(2).max(20).optional(),
+  timezone: z.string().min(3).max(100).optional()
 })
 
 export const ValidateFingerprintSchema = z.object({

@@ -7,6 +7,7 @@ import { FingerprintGenerator } from '@main/core/FingerprintGenerator'
 import { decryptString, encryptString } from '@main/utils/encryption'
 import { getAppPaths } from '@main/utils/paths'
 import type {
+  BrowserProfileConfig,
   CloneProfileInput,
   CreateProfileInput,
   CreateProxyInput,
@@ -90,7 +91,8 @@ export class ProfileManager {
       profileId: id,
       fingerprintEnabled: input.fingerprintEnabled,
       fingerprintOs: input.fingerprintOs,
-      fingerprintConfig: input.fingerprintConfig
+      fingerprintConfig: input.fingerprintConfig,
+      browserConfig: input.browserConfig
     })
 
     await mkdir(storagePath, { recursive: true })
@@ -154,12 +156,16 @@ export class ProfileManager {
 
     const proxyConfig = input.proxyConfig
     const shouldClearProxy = proxyConfig?.type === 'none'
+    const browserConfig = input.browserConfig
+      ? input.browserConfig
+      : (JSON.parse(current.browserConfig) as BrowserProfileConfig)
     const fingerprintState = this.resolveFingerprintState({
       profileId: current.id,
       fingerprintEnabled: input.fingerprintEnabled ?? current.fingerprintEnabled,
       fingerprintOs: input.fingerprintOs ?? (current.fingerprintOs as OSType | null),
       fingerprintConfig:
-        input.fingerprintConfig ?? parseFingerprintConfig(current.fingerprintConfig)
+        input.fingerprintConfig ?? parseFingerprintConfig(current.fingerprintConfig),
+      browserConfig
     })
     const profile = await prisma.profile.update({
       where: { id: input.id },
@@ -219,10 +225,13 @@ export class ProfileManager {
 
     const id = randomUUID()
     const storagePath = join(getAppPaths().profiles, id)
+    const browserConfig = JSON.parse(source.browserConfig) as BrowserProfileConfig
     const fingerprintState = this.resolveFingerprintState({
       profileId: id,
       fingerprintEnabled: source.fingerprintEnabled,
-      fingerprintOs: (source.fingerprintOs as OSType | null) ?? undefined
+      fingerprintOs: (source.fingerprintOs as OSType | null) ?? undefined,
+      fingerprintConfig: parseFingerprintConfig(source.fingerprintConfig),
+      browserConfig
     })
 
     await mkdir(storagePath, { recursive: true })
@@ -333,6 +342,7 @@ export class ProfileManager {
     fingerprintEnabled?: boolean
     fingerprintOs?: OSType | null
     fingerprintConfig?: FingerprintConfig
+    browserConfig?: BrowserProfileConfig
   }): {
     enabled: boolean
     os?: OSType
@@ -356,7 +366,9 @@ export class ProfileManager {
         options.fingerprintConfig ??
         this.generateFingerprint({
           seed: options.profileId,
-          os
+          os,
+          locale: options.browserConfig?.locale,
+          timezone: options.browserConfig?.timezone
         })
     }
   }

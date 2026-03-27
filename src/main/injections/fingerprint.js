@@ -682,6 +682,39 @@
     return status
   }
 
+  function getNoisedSpeechVoices(voices) {
+    if (
+      !fingerprintConfig.advanced.speechVoicesNoise ||
+      !Array.isArray(voices) ||
+      voices.length < 2
+    ) {
+      return voices
+    }
+
+    const preferredLanguage = languages[0] || locale
+    const matching = []
+    const remaining = []
+
+    for (const voice of voices) {
+      if (voice && typeof voice.lang === 'string' && voice.lang.toLowerCase() === preferredLanguage.toLowerCase()) {
+        matching.push(voice)
+      } else {
+        remaining.push(voice)
+      }
+    }
+
+    const rotated = remaining.slice()
+
+    for (let index = rotated.length - 1; index > 0; index -= 1) {
+      const swapIndex = stringHash(`${profileId}:speech:${index}`) % (index + 1)
+      const current = rotated[index]
+      rotated[index] = rotated[swapIndex]
+      rotated[swapIndex] = current
+    }
+
+    return [...matching, ...rotated]
+  }
+
   installNativeToStringPatch()
 
   overrideGetter(navigator, 'userAgent', function () {
@@ -931,29 +964,31 @@
     )
   }
 
-  wrapMethod(Element && Element.prototype, 'getBoundingClientRect', (originalMethod) =>
-    function getBoundingClientRect() {
-      return shiftRect(originalMethod.apply(this, arguments), 'element:bounding')
-    }
-  )
+  if (fingerprintConfig.advanced.clientRectsNoise) {
+    wrapMethod(Element && Element.prototype, 'getBoundingClientRect', (originalMethod) =>
+      function getBoundingClientRect() {
+        return shiftRect(originalMethod.apply(this, arguments), 'element:bounding')
+      }
+    )
 
-  wrapMethod(Element && Element.prototype, 'getClientRects', (originalMethod) =>
-    function getClientRects() {
-      return createRectListProxy(originalMethod.apply(this, arguments), 'element:rects')
-    }
-  )
+    wrapMethod(Element && Element.prototype, 'getClientRects', (originalMethod) =>
+      function getClientRects() {
+        return createRectListProxy(originalMethod.apply(this, arguments), 'element:rects')
+      }
+    )
 
-  wrapMethod(Range && Range.prototype, 'getBoundingClientRect', (originalMethod) =>
-    function getBoundingClientRect() {
-      return shiftRect(originalMethod.apply(this, arguments), 'range:bounding')
-    }
-  )
+    wrapMethod(Range && Range.prototype, 'getBoundingClientRect', (originalMethod) =>
+      function getBoundingClientRect() {
+        return shiftRect(originalMethod.apply(this, arguments), 'range:bounding')
+      }
+    )
 
-  wrapMethod(Range && Range.prototype, 'getClientRects', (originalMethod) =>
-    function getClientRects() {
-      return createRectListProxy(originalMethod.apply(this, arguments), 'range:rects')
-    }
-  )
+    wrapMethod(Range && Range.prototype, 'getClientRects', (originalMethod) =>
+      function getClientRects() {
+        return createRectListProxy(originalMethod.apply(this, arguments), 'range:rects')
+      }
+    )
+  }
 
   if (window.AudioBuffer && AudioBuffer.prototype) {
     wrapMethod(AudioBuffer.prototype, 'getChannelData', (originalMethod) =>
@@ -979,6 +1014,17 @@
         }
 
         return result
+      }
+    )
+  }
+
+  if (window.speechSynthesis && typeof window.speechSynthesis.getVoices === 'function') {
+    const prototype = Object.getPrototypeOf(window.speechSynthesis)
+
+    wrapMethod(prototype, 'getVoices', (originalMethod) =>
+      function getVoices() {
+        const voices = originalMethod.apply(this, arguments)
+        return getNoisedSpeechVoices(Array.isArray(voices) ? voices.slice() : voices)
       }
     )
   }

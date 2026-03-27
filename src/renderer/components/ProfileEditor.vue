@@ -3,6 +3,18 @@ import { computed, reactive, ref, toRaw, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_BROWSER_CONFIG, OS_TYPES } from '@shared/constants'
 import { useFingerprintStore } from '@renderer/stores/fingerprint'
+import {
+  COLOR_DEPTH_OPTIONS,
+  COMMON_LOCALE_OPTIONS,
+  CPU_CORE_OPTIONS,
+  MEMORY_OPTIONS,
+  PIXEL_RATIO_OPTIONS,
+  getFontOptions,
+  getGpuRendererOptions,
+  getGpuVendorOptions,
+  getScreenPresets,
+  getTimezoneOptions
+} from '@renderer/utils/fingerprintPresets'
 import type {
   CreateProfileInput,
   FingerprintConfig,
@@ -10,6 +22,8 @@ import type {
   Profile,
   UpdateProfileInput
 } from '@shared/types'
+
+type FingerprintMode = 'default' | 'custom'
 
 interface ProfileFormState {
   name: string
@@ -44,20 +58,10 @@ const emit = defineEmits<{
 const fingerprintStore = useFingerprintStore()
 const isEditMode = computed(() => Boolean(props.profile))
 const activeStep = ref(0)
-
-function cloneFingerprintConfig(
-  config?: FingerprintConfig | null
-): FingerprintConfig | null | undefined {
-  if (config === null) {
-    return null
-  }
-
-  if (!config) {
-    return undefined
-  }
-
-  return structuredClone(toRaw(config))
-}
+const fingerprintMode = ref<FingerprintMode>('default')
+const defaultFingerprint = ref<FingerprintConfig | null>(null)
+const fingerprintSeed = ref('')
+const isResetting = ref(false)
 
 const form = reactive<ProfileFormState>({
   name: '',
@@ -79,13 +83,141 @@ const form = reactive<ProfileFormState>({
 })
 
 const steps = [
-  { title: '基础信息', description: '名称、首页和窗口尺寸' },
-  { title: '指纹配置', description: '持久化并注入指纹' },
+  { title: '基础信息', description: '浏览器名称、语言与窗口设置' },
+  { title: '指纹配置', description: '默认指纹或自定义指纹参数' },
   { title: '代理设置', description: '绑定 HTTP / SOCKS5 代理' },
-  { title: '确认保存', description: '检查当前配置后提交' }
+  { title: '确认保存', description: '核对配置后保存' }
 ]
 
+function cloneFingerprintConfig(
+  config?: FingerprintConfig | null
+): FingerprintConfig | null | undefined {
+  if (config === null) {
+    return null
+  }
+
+  if (!config) {
+    return undefined
+  }
+
+  return structuredClone(toRaw(config))
+}
+
+function buildOptionList(values: string[], currentValue: string): string[] {
+  return Array.from(new Set([currentValue, ...values].filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right)
+  )
+}
+
+function resolveFingerprintPresetOs(config?: FingerprintConfig | null): OSType {
+  if (form.selectedOS !== 'random') {
+    return form.selectedOS
+  }
+
+  if (!config) {
+    return OS_TYPES.WIN10
+  }
+
+  if (config.software.platform === 'MacIntel') {
+    return OS_TYPES.MACOS
+  }
+
+  if (config.software.platform.includes('Linux')) {
+    return OS_TYPES.LINUX
+  }
+
+  if (config.userAgent.includes('Windows')) {
+    return OS_TYPES.WIN10
+  }
+
+  return OS_TYPES.WIN10
+}
+
+function getFingerprintSeed(randomize = false): string {
+  if (randomize || !fingerprintSeed.value) {
+    fingerprintSeed.value = randomize ? crypto.randomUUID() : (props.profile?.id ?? crypto.randomUUID())
+  }
+
+  return fingerprintSeed.value
+}
+
+function getFingerprintGenerationOptions(apply: boolean): {
+  seed: string
+  options: { os?: OSType; locale: string; timezone: string; apply: boolean }
+} {
+  return {
+    seed: getFingerprintSeed(),
+    options: {
+      os: form.selectedOS === 'random' ? undefined : form.selectedOS,
+      locale: form.locale.trim() || DEFAULT_BROWSER_CONFIG.locale,
+      timezone: form.timezone.trim() || DEFAULT_BROWSER_CONFIG.timezone,
+      apply
+    }
+  }
+}
+
+const localeOptions = computed(() => buildOptionList(COMMON_LOCALE_OPTIONS, form.locale))
+const timezoneOptions = computed(() => buildOptionList(getTimezoneOptions(), form.timezone))
+const currentFingerprint = computed(() => fingerprintStore.currentFingerprint)
+const presetOs = computed(() => resolveFingerprintPresetOs(currentFingerprint.value ?? defaultFingerprint.value))
+const screenPresets = computed(() => getScreenPresets(presetOs.value))
+const fontOptions = computed(() =>
+  buildOptionList(getFontOptions(presetOs.value), currentFingerprint.value?.hardware.fonts[0] ?? '')
+)
+const gpuVendorOptions = computed(() =>
+  buildOptionList(getGpuVendorOptions(presetOs.value), currentFingerprint.value?.hardware.gpu.vendor ?? '')
+)
+const gpuRendererOptions = computed(() =>
+  buildOptionList(
+    getGpuRendererOptions(presetOs.value, currentFingerprint.value?.hardware.gpu.vendor),
+    currentFingerprint.value?.hardware.gpu.renderer ?? ''
+  )
+)
+
+const fingerprintSummary = computed(() => {
+  const config = currentFingerprint.value ?? defaultFingerprint.value
+
+  if (!config) {
+    return null
+  }
+
+  const os =
+    config.software.platform === 'MacIntel'
+      ? 'macOS'
+      : config.software.platform.includes('Linux')
+        ? 'Linux'
+        : 'Windows'
+  const browserVersion = config.userAgent.match(/(?:Chrome|Edg|OPR|Vivaldi)\/([\d.]+)/)?.[1] ?? 'Chrome'
+
+  return {
+    os,
+    browser: `Chrome ${browserVersion}`,
+    resolution: `${config.hardware.screen.width} x ${config.hardware.screen.height}`,
+    cpuCores: config.hardware.cpuCores,
+    memory: `${config.hardware.memory} GB`,
+    timezone: config.software.timezone,
+    locale: config.software.locale,
+    gpuVendor: config.hardware.gpu.vendor,
+    fontCount: config.hardware.fonts.length,
+    dnt: config.software.doNotTrack ? '开启' : '关闭'
+  }
+})
+
+function syncLocaleTimezoneToFingerprints(): void {
+  if (defaultFingerprint.value) {
+    defaultFingerprint.value.software.locale = form.locale
+    defaultFingerprint.value.software.timezone = form.timezone
+  }
+
+  if (fingerprintStore.currentFingerprint) {
+    fingerprintStore.currentFingerprint.software.locale = form.locale
+    fingerprintStore.currentFingerprint.software.timezone = form.timezone
+  }
+}
+
 function resetForm(profile?: Profile | null): void {
+  isResetting.value = true
+
   form.name = profile?.name ?? ''
   form.notes = profile?.notes ?? ''
   form.locale = profile?.browserConfig.locale ?? DEFAULT_BROWSER_CONFIG.locale
@@ -103,8 +235,18 @@ function resetForm(profile?: Profile | null): void {
   form.proxyPassword = profile?.proxyConfig?.password ?? ''
   form.selectedOS = profile?.fingerprintOs ?? 'random'
   form.enableFingerprint = profile?.fingerprintEnabled ?? true
+
+  fingerprintSeed.value = profile?.id ?? crypto.randomUUID()
+  defaultFingerprint.value = cloneFingerprintConfig(profile?.fingerprintConfig) ?? null
   fingerprintStore.setFingerprint(cloneFingerprintConfig(profile?.fingerprintConfig) ?? null)
+  fingerprintMode.value = profile?.fingerprintConfig ? 'custom' : 'default'
   activeStep.value = 0
+
+  isResetting.value = false
+
+  if (form.enableFingerprint && !profile?.fingerprintConfig) {
+    void refreshDefaultFingerprint({ applyToCurrent: true })
+  }
 }
 
 watch(
@@ -119,8 +261,46 @@ watch(
 watch(
   () => form.enableFingerprint,
   (enabled) => {
+    if (isResetting.value || !props.modelValue) {
+      return
+    }
+
     if (!enabled) {
+      defaultFingerprint.value = null
       fingerprintStore.clearFingerprint()
+      return
+    }
+
+    if (!fingerprintStore.currentFingerprint) {
+      void refreshDefaultFingerprint({ applyToCurrent: fingerprintMode.value === 'default' })
+    }
+  }
+)
+
+watch(
+  () => [form.locale, form.timezone],
+  () => {
+    if (isResetting.value) {
+      return
+    }
+
+    syncLocaleTimezoneToFingerprints()
+
+    if (props.modelValue && form.enableFingerprint && fingerprintMode.value === 'default') {
+      void refreshDefaultFingerprint({ applyToCurrent: true })
+    }
+  }
+)
+
+watch(
+  () => form.selectedOS,
+  () => {
+    if (isResetting.value) {
+      return
+    }
+
+    if (props.modelValue && form.enableFingerprint && fingerprintMode.value === 'default') {
+      void refreshDefaultFingerprint({ applyToCurrent: true })
     }
   }
 )
@@ -163,12 +343,12 @@ function validateBasicInfo(): boolean {
   }
 
   if (!form.locale) {
-    ElMessage.warning('请填写语言设置。')
+    ElMessage.warning('请选择或输入语言。')
     return false
   }
 
   if (!form.timezone) {
-    ElMessage.warning('请填写时区。')
+    ElMessage.warning('请选择或输入时区。')
     return false
   }
 
@@ -183,7 +363,7 @@ function validateProxy(): boolean {
   form.proxyHost = form.proxyHost.trim()
 
   if (!form.proxyHost) {
-    ElMessage.warning('已启用代理时，代理地址不能为空。')
+    ElMessage.warning('启用代理时，代理地址不能为空。')
     return false
   }
 
@@ -195,39 +375,138 @@ function validateProxy(): boolean {
   return true
 }
 
+async function refreshDefaultFingerprint(options: {
+  randomizeSeed?: boolean
+  applyToCurrent?: boolean
+} = {}): Promise<FingerprintConfig | null> {
+  if (!form.enableFingerprint) {
+    defaultFingerprint.value = null
+    fingerprintStore.clearFingerprint()
+    return null
+  }
+
+  const seed = getFingerprintSeed(options.randomizeSeed)
+  const generation = getFingerprintGenerationOptions(options.applyToCurrent !== false)
+  const generated = await fingerprintStore.generateFingerprint(seed, generation.options)
+
+  if (!generated) {
+    return null
+  }
+
+  defaultFingerprint.value = cloneFingerprintConfig(generated) ?? null
+
+  if (options.applyToCurrent === false && fingerprintMode.value === 'default') {
+    fingerprintStore.setFingerprint(cloneFingerprintConfig(generated) ?? null)
+  }
+
+  return generated
+}
+
+async function applyDefaultFingerprint(options: { randomizeSeed?: boolean } = {}): Promise<void> {
+  const generated =
+    defaultFingerprint.value && !options.randomizeSeed
+      ? defaultFingerprint.value
+      : await refreshDefaultFingerprint({
+          randomizeSeed: options.randomizeSeed,
+          applyToCurrent: false
+        })
+
+  if (!generated) {
+    ElMessage.error(fingerprintStore.error || '默认指纹生成失败，请稍后重试。')
+    return
+  }
+
+  fingerprintStore.setFingerprint(cloneFingerprintConfig(generated) ?? null)
+}
+
+async function fillCustomFromDefault(randomizeSeed = false): Promise<void> {
+  const generated = await refreshDefaultFingerprint({
+    randomizeSeed,
+    applyToCurrent: false
+  })
+
+  if (!generated) {
+    ElMessage.error(fingerprintStore.error || '默认指纹生成失败，请稍后重试。')
+    return
+  }
+
+  fingerprintStore.setFingerprint(cloneFingerprintConfig(generated) ?? null)
+  fingerprintMode.value = 'custom'
+}
+
+async function handleFingerprintModeChange(mode: FingerprintMode): Promise<void> {
+  fingerprintMode.value = mode
+
+  if (!form.enableFingerprint) {
+    return
+  }
+
+  if (mode === 'default') {
+    await applyDefaultFingerprint()
+    return
+  }
+
+  if (!fingerprintStore.currentFingerprint) {
+    await fillCustomFromDefault()
+  }
+}
+
+function applyWindowPreset(preset: { width: number; height: number; pixelRatio: number }): void {
+  form.width = preset.width
+  form.height = preset.height
+  form.pixelRatio = preset.pixelRatio
+}
+
+function useMatchingGpuRenderer(): void {
+  const vendor = fingerprintStore.currentFingerprint?.hardware.gpu.vendor
+
+  if (!vendor || !fingerprintStore.currentFingerprint) {
+    return
+  }
+
+  const [renderer] = getGpuRendererOptions(presetOs.value, vendor)
+
+  if (renderer) {
+    fingerprintStore.currentFingerprint.hardware.gpu.renderer = renderer
+  }
+}
+
 async function ensureFingerprintReady(): Promise<boolean> {
   if (!form.enableFingerprint) {
     return true
   }
 
-  if (fingerprintStore.currentFingerprint) {
-    return true
+  if (!fingerprintStore.currentFingerprint) {
+    const generated = await refreshDefaultFingerprint({
+      applyToCurrent: true
+    })
+
+    if (!generated) {
+      ElMessage.error(fingerprintStore.error || '指纹生成失败，请稍后重试。')
+      return false
+    }
   }
 
-  const generated = await previewFingerprint()
+  if (!fingerprintStore.currentFingerprint) {
+    return false
+  }
 
-  if (!generated) {
-    ElMessage.error(fingerprintStore.error || '指纹生成失败，请稍后再试。')
+  const valid = await fingerprintStore.validateFingerprint(fingerprintStore.currentFingerprint)
+
+  if (!valid) {
+    ElMessage.warning('当前指纹组合不够合理，请调整后再保存。')
     return false
   }
 
   return true
 }
 
-async function previewFingerprint(): Promise<boolean> {
-  if (!form.enableFingerprint) {
-    fingerprintStore.clearFingerprint()
-    return true
-  }
-
-  const seed = props.profile?.id ?? crypto.randomUUID()
-  const os = form.selectedOS === 'random' ? undefined : form.selectedOS
-  const generated = await fingerprintStore.generateFingerprint(seed, { os })
-  return generated !== null
-}
-
 async function goNext(): Promise<void> {
   if (activeStep.value === 0 && !validateBasicInfo()) {
+    return
+  }
+
+  if (activeStep.value === 1 && !(await ensureFingerprintReady())) {
     return
   }
 
@@ -245,9 +524,7 @@ async function submit(): Promise<void> {
     return
   }
 
-  const fingerprintReady = await ensureFingerprintReady()
-
-  if (!fingerprintReady) {
+  if (!(await ensureFingerprintReady())) {
     return
   }
 
@@ -301,7 +578,7 @@ async function submit(): Promise<void> {
   <el-dialog
     :model-value="modelValue"
     :title="isEditMode ? '编辑浏览器' : '创建浏览器'"
-    width="1100px"
+    width="1180px"
     align-center
     append-to-body
     class="profile-editor-dialog"
@@ -338,12 +615,38 @@ async function submit(): Promise<void> {
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="语言">
-              <el-input v-model="form.locale" placeholder="zh-CN / en-US" />
+              <el-select
+                v-model="form.locale"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="选择或输入语言"
+              >
+                <el-option
+                  v-for="locale in localeOptions"
+                  :key="locale"
+                  :label="locale"
+                  :value="locale"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="时区">
-              <el-input v-model="form.timezone" placeholder="Asia/Hong_Kong" />
+              <el-select
+                v-model="form.timezone"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="选择或输入时区"
+              >
+                <el-option
+                  v-for="timezone in timezoneOptions"
+                  :key="timezone"
+                  :label="timezone"
+                  :value="timezone"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -358,6 +661,19 @@ async function submit(): Promise<void> {
         </el-row>
 
         <el-divider>窗口尺寸</el-divider>
+
+        <el-form-item label="常用窗口预设">
+          <div class="preset-list">
+            <el-button
+              v-for="preset in screenPresets"
+              :key="preset.label"
+              plain
+              @click="applyWindowPreset(preset)"
+            >
+              {{ preset.label }}
+            </el-button>
+          </div>
+        </el-form-item>
 
         <el-row :gutter="16">
           <el-col :span="8">
@@ -384,13 +700,14 @@ async function submit(): Promise<void> {
           </el-col>
           <el-col :span="8">
             <el-form-item label="像素比">
-              <el-input-number
-                v-model="form.pixelRatio"
-                :min="1"
-                :max="3"
-                :step="0.25"
-                controls-position="right"
-              />
+              <el-select v-model="form.pixelRatio" placeholder="选择像素比">
+                <el-option
+                  v-for="ratio in PIXEL_RATIO_OPTIONS"
+                  :key="ratio"
+                  :label="`${ratio}x`"
+                  :value="ratio"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -401,7 +718,7 @@ async function submit(): Promise<void> {
       <el-form label-position="top">
         <el-form-item>
           <el-checkbox v-model="form.enableFingerprint">
-            为这个浏览器持久化并注入反检测指纹
+            为这个浏览器启用持久化指纹，并在启动时自动注入
           </el-checkbox>
         </el-form-item>
 
@@ -416,50 +733,330 @@ async function submit(): Promise<void> {
             </el-radio-group>
           </el-form-item>
 
-          <el-button
-            type="primary"
-            plain
-            :loading="fingerprintStore.loading"
-            @click="previewFingerprint"
-          >
-            生成并保存当前指纹
-          </el-button>
+          <el-form-item label="使用方式">
+            <el-radio-group v-model="fingerprintMode" @change="handleFingerprintModeChange">
+              <el-radio-button label="default">默认指纹</el-radio-button>
+              <el-radio-button label="custom">自定义指纹</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
 
-          <p class="fingerprint-hint">
-            这份指纹会随着 profile
-            一起持久化，浏览器启动时自动注入到新页面；浏览器运行后可在列表页直接点击“验证”查看当前环境。
-          </p>
+          <el-alert
+            type="info"
+            :closable="false"
+            class="mb-4"
+            title="语言和时区与基础信息联动。默认指纹会随基础配置自动重算，自定义模式可以在此基础上继续微调。"
+          />
 
-          <div
-            v-if="fingerprintStore.hasFingerprint && fingerprintStore.fingerprintSummary"
-            class="fingerprint-preview"
-          >
+          <div class="fingerprint-actions">
+            <template v-if="fingerprintMode === 'default'">
+              <el-button type="primary" :loading="fingerprintStore.loading" @click="applyDefaultFingerprint()">
+                应用默认指纹
+              </el-button>
+              <el-button
+                plain
+                :loading="fingerprintStore.loading"
+                @click="applyDefaultFingerprint({ randomizeSeed: true })"
+              >
+                随机一个默认模板
+              </el-button>
+            </template>
+
+            <template v-else>
+              <el-button
+                type="primary"
+                plain
+                :loading="fingerprintStore.loading"
+                @click="fillCustomFromDefault()"
+              >
+                从默认指纹填充
+              </el-button>
+              <el-button
+                plain
+                :loading="fingerprintStore.loading"
+                @click="fillCustomFromDefault(true)"
+              >
+                随机模板填充
+              </el-button>
+              <el-button plain @click="handleFingerprintModeChange('default')">切回默认指纹</el-button>
+            </template>
+          </div>
+
+          <div v-if="fingerprintMode === 'custom' && currentFingerprint" class="fingerprint-grid">
+            <section class="fingerprint-card">
+              <header class="fingerprint-card__header">
+                <h3>基础标识</h3>
+                <span>可手动修改 UA、Client Hints 与语言环境</span>
+              </header>
+
+              <el-form-item label="User-Agent">
+                <el-input
+                  v-model="currentFingerprint.userAgent"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="Mozilla/5.0 ..."
+                />
+              </el-form-item>
+
+              <el-form-item label="Sec-CH-UA">
+                <el-input
+                  v-model="currentFingerprint.secChUa"
+                  placeholder="&quot;Not_A Brand&quot;;v=&quot;8&quot;, &quot;Chromium&quot;;v=&quot;142&quot;"
+                />
+              </el-form-item>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="语言">
+                    <el-select
+                      v-model="form.locale"
+                      filterable
+                      allow-create
+                      default-first-option
+                    >
+                      <el-option
+                        v-for="locale in localeOptions"
+                        :key="locale"
+                        :label="locale"
+                        :value="locale"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="时区">
+                    <el-select
+                      v-model="form.timezone"
+                      filterable
+                      allow-create
+                      default-first-option
+                    >
+                      <el-option
+                        v-for="timezone in timezoneOptions"
+                        :key="timezone"
+                        :label="timezone"
+                        :value="timezone"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-form-item label="Do Not Track">
+                <el-switch
+                  v-model="currentFingerprint.software.doNotTrack"
+                  inline-prompt
+                  active-text="开"
+                  inactive-text="关"
+                />
+              </el-form-item>
+            </section>
+
+            <section class="fingerprint-card">
+              <header class="fingerprint-card__header">
+                <h3>硬件与分辨率</h3>
+                <span>控制 CPU、内存和屏幕参数</span>
+              </header>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="CPU 核数">
+                    <el-select v-model="currentFingerprint.hardware.cpuCores">
+                      <el-option
+                        v-for="cores in CPU_CORE_OPTIONS"
+                        :key="cores"
+                        :label="`${cores} 核`"
+                        :value="cores"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="内存">
+                    <el-select v-model="currentFingerprint.hardware.memory">
+                      <el-option
+                        v-for="memory in MEMORY_OPTIONS"
+                        :key="memory"
+                        :label="`${memory} GB`"
+                        :value="memory"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-row :gutter="16">
+                <el-col :span="6">
+                  <el-form-item label="宽度">
+                    <el-input-number
+                      v-model="currentFingerprint.hardware.screen.width"
+                      :min="800"
+                      :max="7680"
+                      controls-position="right"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="高度">
+                    <el-input-number
+                      v-model="currentFingerprint.hardware.screen.height"
+                      :min="600"
+                      :max="4320"
+                      controls-position="right"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="像素比">
+                    <el-select v-model="currentFingerprint.hardware.screen.pixelRatio">
+                      <el-option
+                        v-for="ratio in PIXEL_RATIO_OPTIONS"
+                        :key="ratio"
+                        :label="`${ratio}x`"
+                        :value="ratio"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="6">
+                  <el-form-item label="色深">
+                    <el-select v-model="currentFingerprint.hardware.screen.colorDepth">
+                      <el-option
+                        v-for="depth in COLOR_DEPTH_OPTIONS"
+                        :key="depth"
+                        :label="`${depth} bit`"
+                        :value="depth"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </section>
+
+            <section class="fingerprint-card">
+              <header class="fingerprint-card__header">
+                <h3>图形与字体</h3>
+                <span>调整 WebGL 厂商、渲染器和可见字体</span>
+              </header>
+
+              <el-row :gutter="16">
+                <el-col :span="10">
+                  <el-form-item label="WebGL 厂商">
+                    <el-select
+                      v-model="currentFingerprint.hardware.gpu.vendor"
+                      filterable
+                      allow-create
+                      default-first-option
+                    >
+                      <el-option
+                        v-for="vendor in gpuVendorOptions"
+                        :key="vendor"
+                        :label="vendor"
+                        :value="vendor"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="14">
+                  <el-form-item label="WebGL 渲染器">
+                    <div class="gpu-renderer-row">
+                      <el-select
+                        v-model="currentFingerprint.hardware.gpu.renderer"
+                        filterable
+                        allow-create
+                        default-first-option
+                      >
+                        <el-option
+                          v-for="renderer in gpuRendererOptions"
+                          :key="renderer"
+                          :label="renderer"
+                          :value="renderer"
+                        />
+                      </el-select>
+                      <el-button plain @click="useMatchingGpuRenderer">匹配厂商</el-button>
+                    </div>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-form-item label="字体列表">
+                <el-select
+                  v-model="currentFingerprint.hardware.fonts"
+                  multiple
+                  filterable
+                  allow-create
+                  default-first-option
+                  collapse-tags
+                  collapse-tags-tooltip
+                  placeholder="选择或输入字体"
+                >
+                  <el-option
+                    v-for="font in fontOptions"
+                    :key="font"
+                    :label="font"
+                    :value="font"
+                  />
+                </el-select>
+              </el-form-item>
+            </section>
+
+            <section class="fingerprint-card">
+              <header class="fingerprint-card__header">
+                <h3>高级扰动</h3>
+                <span>控制 Canvas、WebGL、Audio 与 ClientRects 相关噪声</span>
+              </header>
+
+              <el-form-item label="Canvas 噪声">
+                <div class="slider-row">
+                  <el-slider
+                    v-model="currentFingerprint.advanced.canvasNoise"
+                    :min="0"
+                    :max="10"
+                    show-input
+                  />
+                </div>
+              </el-form-item>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="WebGL 噪声">
+                    <el-switch v-model="currentFingerprint.advanced.webglNoise" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="AudioContext 噪声">
+                    <el-switch v-model="currentFingerprint.advanced.audioNoise" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="ClientRects 扰动">
+                    <el-switch v-model="currentFingerprint.advanced.clientRectsNoise" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="Speech Voices 扰动">
+                    <el-switch v-model="currentFingerprint.advanced.speechVoicesNoise" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </section>
+          </div>
+
+          <div v-if="fingerprintSummary" class="fingerprint-preview">
             <el-divider>当前指纹预览</el-divider>
             <el-descriptions :column="2" border size="small">
-              <el-descriptions-item label="操作系统">{{
-                fingerprintStore.fingerprintSummary.os
-              }}</el-descriptions-item>
-              <el-descriptions-item label="浏览器">{{
-                fingerprintStore.fingerprintSummary.browser
-              }}</el-descriptions-item>
-              <el-descriptions-item label="分辨率">{{
-                fingerprintStore.fingerprintSummary.resolution
-              }}</el-descriptions-item>
-              <el-descriptions-item label="CPU 核心数">{{
-                fingerprintStore.fingerprintSummary.cpuCores
-              }}</el-descriptions-item>
-              <el-descriptions-item label="内存">{{
-                fingerprintStore.fingerprintSummary.memory
-              }}</el-descriptions-item>
-              <el-descriptions-item label="时区">{{
-                fingerprintStore.fingerprintSummary.timezone
-              }}</el-descriptions-item>
-              <el-descriptions-item label="语言">{{
-                fingerprintStore.fingerprintSummary.locale
-              }}</el-descriptions-item>
-              <el-descriptions-item label="字体"
-                >{{ fingerprintStore.fingerprintSummary.fontCount }} 项</el-descriptions-item
-              >
+              <el-descriptions-item label="操作系统">{{ fingerprintSummary.os }}</el-descriptions-item>
+              <el-descriptions-item label="浏览器">{{ fingerprintSummary.browser }}</el-descriptions-item>
+              <el-descriptions-item label="分辨率">{{ fingerprintSummary.resolution }}</el-descriptions-item>
+              <el-descriptions-item label="CPU 核数">{{ fingerprintSummary.cpuCores }}</el-descriptions-item>
+              <el-descriptions-item label="内存">{{ fingerprintSummary.memory }}</el-descriptions-item>
+              <el-descriptions-item label="时区">{{ fingerprintSummary.timezone }}</el-descriptions-item>
+              <el-descriptions-item label="语言">{{ fingerprintSummary.locale }}</el-descriptions-item>
+              <el-descriptions-item label="字体">{{ fingerprintSummary.fontCount }} 项</el-descriptions-item>
+              <el-descriptions-item label="GPU 厂商">{{ fingerprintSummary.gpuVendor }}</el-descriptions-item>
+              <el-descriptions-item label="DNT">{{ fingerprintSummary.dnt }}</el-descriptions-item>
             </el-descriptions>
           </div>
         </template>
@@ -531,14 +1128,20 @@ async function submit(): Promise<void> {
       <el-descriptions :column="1" border>
         <el-descriptions-item label="浏览器名称">{{ form.name || '未填写' }}</el-descriptions-item>
         <el-descriptions-item label="首页地址">{{ form.homeUrl }}</el-descriptions-item>
-        <el-descriptions-item label="窗口尺寸"
-          >{{ form.width }} x {{ form.height }} ({{ form.pixelRatio }}x)</el-descriptions-item
-        >
-        <el-descriptions-item label="语言 / 时区"
-          >{{ form.locale }} / {{ form.timezone }}</el-descriptions-item
-        >
+        <el-descriptions-item label="窗口尺寸">
+          {{ form.width }} x {{ form.height }} ({{ form.pixelRatio }}x)
+        </el-descriptions-item>
+        <el-descriptions-item label="语言 / 时区">
+          {{ form.locale }} / {{ form.timezone }}
+        </el-descriptions-item>
         <el-descriptions-item label="指纹状态">
-          {{ form.enableFingerprint ? '已启用，启动时自动注入' : '已关闭' }}
+          {{
+            form.enableFingerprint
+              ? fingerprintMode === 'custom'
+                ? '已启用，自定义指纹'
+                : '已启用，默认指纹'
+              : '已关闭'
+          }}
         </el-descriptions-item>
         <el-descriptions-item label="代理配置">
           {{
@@ -552,7 +1155,7 @@ async function submit(): Promise<void> {
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button v-if="activeStep > 0" @click="activeStep--">上一步</el-button>
+        <el-button v-if="activeStep > 0" @click="activeStep -= 1">上一步</el-button>
         <el-button v-if="activeStep < 3" type="primary" @click="goNext">下一步</el-button>
         <el-button v-else type="success" :loading="saving" @click="submit">
           {{ isEditMode ? '保存修改' : '创建浏览器' }}
@@ -597,7 +1200,48 @@ async function submit(): Promise<void> {
 
 .step-content {
   padding: 22px 0 8px;
-  min-height: 460px;
+  min-height: 500px;
+}
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fingerprint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.fingerprint-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.fingerprint-card {
+  padding: 18px;
+  border: 1px solid #e8ecf3;
+  border-radius: 16px;
+  background: #fafbff;
+}
+
+.fingerprint-card__header {
+  margin-bottom: 14px;
+}
+
+.fingerprint-card__header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.fingerprint-card__header span {
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .fingerprint-preview {
@@ -608,10 +1252,14 @@ async function submit(): Promise<void> {
   background: #f8f9fc;
 }
 
-.fingerprint-hint {
-  margin: 14px 0 0;
-  color: var(--text-secondary);
-  line-height: 1.8;
+.gpu-renderer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.slider-row {
+  padding: 6px 4px 0;
 }
 
 .dialog-footer {
@@ -628,9 +1276,17 @@ async function submit(): Promise<void> {
   margin-bottom: 16px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .step-content {
-    min-height: 360px;
+    min-height: 420px;
+  }
+
+  .fingerprint-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gpu-renderer-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

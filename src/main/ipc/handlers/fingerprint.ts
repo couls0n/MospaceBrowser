@@ -14,7 +14,9 @@ export const fingerprintHandlers: IpcHandlerDefinition[] = [
       const options: FingerprintGenerationOptions = {
         seed: input.seed,
         ip: input.ip,
-        os: input.os
+        os: input.os,
+        locale: input.locale,
+        timezone: input.timezone
       }
       return profileManager.generateFingerprint(options)
     }

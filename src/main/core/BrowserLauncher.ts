@@ -170,7 +170,9 @@ export class BrowserLauncher extends EventEmitter {
       this.profileManager.generateFingerprint({
         seed: profile.id,
         os: profile.fingerprintOs,
-        ip: profile.proxyConfig?.host
+        ip: profile.proxyConfig?.host,
+        locale: profile.browserConfig.locale,
+        timezone: profile.browserConfig.timezone
       })
     )
   }
@@ -368,10 +370,7 @@ export class BrowserLauncher extends EventEmitter {
     const platformVersion =
       this.derivePlatformVersion(profile.fingerprintOs, platform) ?? DEFAULT_PLATFORM_VERSION[platform]
 
-    return [
-      '--fingerprinting-client-rects-noise',
-      '--fingerprinting-canvas-measure-text-noise',
-      '--fingerprinting-canvas-image-data-noise',
+    const switches = [
       `--fingerprint=${this.buildFingerprintSeed(profile.id, fingerprintConfig)}`,
       `--fingerprint-brand=${this.extractBrowserBrand(fingerprintConfig)}`,
       `--fingerprint-brand-version=${brandVersion}`,
@@ -382,6 +381,17 @@ export class BrowserLauncher extends EventEmitter {
       `--fingerprint-platform-version=${platformVersion}`,
       `--timezone=${fingerprintConfig.software.timezone}`
     ]
+
+    if (fingerprintConfig.advanced.clientRectsNoise) {
+      switches.unshift('--fingerprinting-client-rects-noise')
+    }
+
+    if (fingerprintConfig.advanced.canvasNoise > 0) {
+      switches.unshift('--fingerprinting-canvas-measure-text-noise')
+      switches.unshift('--fingerprinting-canvas-image-data-noise')
+    }
+
+    return switches
   }
 
   private buildFingerprintSeed(profileId: string, fingerprintConfig: FingerprintConfig): string {
