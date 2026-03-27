@@ -109,6 +109,10 @@ interface TimezoneMappingData {
   }
 }
 
+const DEFAULT_CHROMIUM_VERSION = '142.0.7444.175'
+const DEFAULT_GREASE_BRAND_VERSION = '8'
+const DEVICE_MEMORY_BUCKETS = [0.25, 0.5, 1, 2, 4, 8]
+
 /**
  * FingerprintGenerator generates realistic browser fingerprints based on device templates.
  * Uses seeded random number generation to ensure the same profile ID always generates
@@ -159,10 +163,13 @@ export class FingerprintGenerator {
       ? (this.templates.find((t) => t.os === preferredOs) ?? this.selectTemplateByWeight(rng()))
       : this.selectTemplateByWeight(rng())
 
-    // 2. Generate hardware configuration
+    // 2. Build browser identity that matches the Chromium branch we target
+    const browserIdentity = this.buildBrowserIdentity(template)
+
+    // 3. Generate hardware configuration
     const hardware = this.generateHardware(template, seed)
 
-    // 3. Determine timezone and locale from IP if provided, otherwise from template
+    // 4. Determine timezone and locale from IP if provided, otherwise from template
     const { timezone, locale } = ip
       ? this.getTimezoneByIP(ip)
       : {
@@ -170,19 +177,19 @@ export class FingerprintGenerator {
           locale: this.getRandomLocale(template.os, rng)
         }
 
-    // 4. Generate font list based on OS
+    // 5. Generate font list based on OS
     const fonts = this.generateFontList(template, seed)
 
-    // 5. Select GPU based on OS
+    // 6. Select GPU based on OS
     const gpu = this.selectGPU(template.os, rng())
 
-    // 6. Build fingerprint config
+    // 7. Build fingerprint config
     const config: FingerprintConfig = {
-      userAgent: template.userAgent,
-      secChUa: template.secChUa,
+      userAgent: browserIdentity.userAgent,
+      secChUa: browserIdentity.secChUa,
       hardware: {
         cpuCores: hardware.cpuCores,
-        memory: hardware.memory,
+        memory: this.normalizeDeviceMemory(hardware.memory),
         screen: hardware.screen,
         gpu,
         fonts
@@ -517,5 +524,57 @@ export class FingerprintGenerator {
     const osLocales = locales[os] ?? locales.win10
     const index = Math.floor(rng() * osLocales.length)
     return osLocales[index]
+  }
+
+  private buildBrowserIdentity(template: UATemplate): { userAgent: string; secChUa: string } {
+    const version = this.extractBrowserVersion(template.userAgent) ?? DEFAULT_CHROMIUM_VERSION
+    const normalizedVersion = version === '120.0.0.0' ? DEFAULT_CHROMIUM_VERSION : version
+    const normalizedUserAgent = template.userAgent.replace(
+      /Chrome\/[\d.]+/,
+      `Chrome/${normalizedVersion}`
+    )
+
+    return {
+      userAgent: normalizedUserAgent,
+      secChUa: this.buildSecChUa(template.secChUa, normalizedVersion)
+    }
+  }
+
+  private extractBrowserVersion(userAgent: string): string | null {
+    const match = userAgent.match(/Chrome\/([\d.]+)/)
+    return match?.[1] ?? null
+  }
+
+  private buildSecChUa(secChUa: string, version: string): string {
+    const majorVersion = version.split('.')[0] || '120'
+    const brands: string[] = []
+    const matcher = /"([^"]+)"\s*;\s*v="([^"]+)"/g
+    let match: RegExpExecArray | null = matcher.exec(secChUa)
+
+    while (match) {
+      const brand = match[1]
+      const nextVersion =
+        brand.toLowerCase().includes('not') || brand.toLowerCase().includes('brand')
+          ? DEFAULT_GREASE_BRAND_VERSION
+          : majorVersion
+      brands.push(`"${brand}";v="${nextVersion}"`)
+      match = matcher.exec(secChUa)
+    }
+
+    if (!brands.length) {
+      return `"Not_A Brand";v="${DEFAULT_GREASE_BRAND_VERSION}", "Chromium";v="${majorVersion}", "Google Chrome";v="${majorVersion}"`
+    }
+
+    return brands.join(', ')
+  }
+
+  private normalizeDeviceMemory(memoryGb: number): number {
+    for (const bucket of DEVICE_MEMORY_BUCKETS) {
+      if (memoryGb <= bucket) {
+        return bucket
+      }
+    }
+
+    return DEVICE_MEMORY_BUCKETS[DEVICE_MEMORY_BUCKETS.length - 1]
   }
 }

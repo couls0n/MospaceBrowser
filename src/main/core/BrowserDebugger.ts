@@ -1,5 +1,6 @@
 import WebSocket from 'ws'
 import { logger } from '@main/utils/logger'
+import type { FingerprintConfig } from '@shared/types'
 
 interface CdpTargetInfo {
   targetId: string
@@ -69,6 +70,11 @@ interface VerificationProbeResult {
   page?: VerificationContextSnapshot
 }
 
+interface UserAgentMetadataBrand {
+  brand: string
+  version: string
+}
+
 type PendingRequest<TResult> = {
   resolve: (value: TResult) => void
   reject: (error: Error) => void
@@ -83,6 +89,7 @@ export class BrowserDebugger {
   private nextRequestId = 0
   private readonly pendingRequests = new Map<number, PendingRequest<unknown>>()
   private readonly installedSessions = new Set<string>()
+  private readonly preparedSessions = new Set<string>()
   private readonly pageSessions = new Map<string, CdpTargetInfo>()
   private primaryPageSessionId: string | null = null
   private resolvePrimaryPageSession: ((sessionId: string) => void) | null = null
@@ -92,8 +99,10 @@ export class BrowserDebugger {
 
   public constructor(
     private readonly websocketUrl: string,
+    private readonly profileId: string,
     private readonly injectionScript: string,
-    private readonly homeUrl: string
+    private readonly homeUrl: string,
+    private readonly fingerprintConfig: FingerprintConfig
   ) {}
 
   public async initialize(): Promise<void> {
@@ -221,6 +230,7 @@ export class BrowserDebugger {
     }
 
     try {
+      await this.preparePageSession(sessionId)
       await this.installFingerprintScript(sessionId)
     } finally {
       if (waitingForDebugger) {
@@ -231,6 +241,7 @@ export class BrowserDebugger {
 
   private handleDetachedFromTarget(params: CdpDetachFromTargetParams): void {
     this.installedSessions.delete(params.sessionId)
+    this.preparedSessions.delete(params.sessionId)
     this.pageSessions.delete(params.sessionId)
 
     if (this.primaryPageSessionId === params.sessionId) {
@@ -251,15 +262,6 @@ export class BrowserDebugger {
       },
       sessionId
     )
-
-    await this.send('Runtime.enable', {}, sessionId).catch(() => undefined)
-    await this.send(
-      'Runtime.evaluate',
-      {
-        expression: this.injectionScript
-      },
-      sessionId
-    ).catch(() => undefined)
 
     this.installedSessions.add(sessionId)
   }
@@ -295,6 +297,7 @@ export class BrowserDebugger {
       this.resolvePrimaryPageSession = null
     }
 
+    await this.preparePageSession(attachment.sessionId)
     await this.installFingerprintScript(attachment.sessionId)
 
     return attachment.sessionId
@@ -319,6 +322,42 @@ export class BrowserDebugger {
       },
       sessionId
     )
+  }
+
+  private async preparePageSession(sessionId: string): Promise<void> {
+    if (this.preparedSessions.has(sessionId)) {
+      return
+    }
+
+    await this.send('Network.enable', {}, sessionId).catch(() => undefined)
+    await this.send(
+      'Emulation.setUserAgentOverride',
+      this.buildUserAgentOverridePayload(),
+      sessionId
+    ).catch(() => undefined)
+    await this.send(
+      'Network.setExtraHTTPHeaders',
+      {
+        headers: this.buildExtraHttpHeaders()
+      },
+      sessionId
+    ).catch(() => undefined)
+    await this.send(
+      'Emulation.setLocaleOverride',
+      {
+        locale: this.fingerprintConfig.software.locale
+      },
+      sessionId
+    ).catch(() => undefined)
+    await this.send(
+      'Emulation.setTimezoneOverride',
+      {
+        timezoneId: this.fingerprintConfig.software.timezone
+      },
+      sessionId
+    ).catch(() => undefined)
+
+    this.preparedSessions.add(sessionId)
   }
 
   private async runIfWaitingForDebugger(sessionId: string): Promise<void> {
@@ -376,16 +415,17 @@ export class BrowserDebugger {
       'Runtime.evaluate',
       {
         expression: `(() => {
+          const helper = globalThis[Symbol.for('${this.getHelperSymbolKey()}')]
           const page = {
             href: globalThis.location?.href ?? null,
             title: globalThis.document?.title ?? null,
             readyState: globalThis.document?.readyState ?? null,
-            marker: globalThis.document?.documentElement?.getAttribute?.('data-xuss-fingerprint') ?? null,
-            profileId: globalThis.document?.documentElement?.getAttribute?.('data-xuss-profile-id') ?? null
+            marker: helper ? 'symbol' : null,
+            profileId: helper?.profileId ?? null
           }
 
           try {
-            const report = globalThis.__xussFingerprint?.verify?.()
+            const report = helper?.verify?.()
 
             if (report) {
               return {
@@ -465,6 +505,182 @@ export class BrowserDebugger {
           : 'Fingerprint helper was not found in this page context.',
       page
     }
+  }
+
+  private buildUserAgentOverridePayload(): Record<string, unknown> {
+    return {
+      userAgent: this.fingerprintConfig.userAgent,
+      acceptLanguage: this.buildAcceptLanguageHeader(),
+      platform: this.getClientHintPlatform(),
+      userAgentMetadata: this.buildUserAgentMetadata()
+    }
+  }
+
+  private buildUserAgentMetadata(): Record<string, unknown> {
+    const fullVersion = this.extractBrowserVersion(this.fingerprintConfig.userAgent) ?? '142.0.7444.175'
+    const brands = this.parseSecChUaBrands(this.fingerprintConfig.secChUa, false)
+    const fullVersionList = this.parseSecChUaBrands(this.fingerprintConfig.secChUa, true)
+    const architecture = this.getArchitecture()
+    const bitness = architecture === 'arm' ? '64' : this.getBitness()
+
+    return {
+      brands,
+      fullVersionList,
+      fullVersion,
+      platform: this.getClientHintPlatform(),
+      platformVersion: this.getClientHintPlatformVersion(),
+      architecture,
+      model: '',
+      mobile: false,
+      bitness,
+      wow64: false
+    }
+  }
+
+  private parseSecChUaBrands(secChUa: string | undefined, useFullVersion: boolean): UserAgentMetadataBrand[] {
+    const fullVersion = this.extractBrowserVersion(this.fingerprintConfig.userAgent) ?? '142.0.7444.175'
+    const majorVersion = fullVersion.split('.')[0] || '142'
+    const matcher = /"([^"]+)"\s*;\s*v="([^"]+)"/g
+    const brands: UserAgentMetadataBrand[] = []
+    let match = matcher.exec(secChUa ?? '')
+
+    while (match) {
+      const brand = match[1]
+      const version = this.isGreaseBrand(brand)
+        ? useFullVersion
+          ? '8.0.0.0'
+          : '8'
+        : useFullVersion
+          ? fullVersion
+          : majorVersion
+
+      brands.push({ brand, version })
+      match = matcher.exec(secChUa ?? '')
+    }
+
+    if (brands.length) {
+      return brands
+    }
+
+    return [
+      { brand: 'Not_A Brand', version: useFullVersion ? '8.0.0.0' : '8' },
+      { brand: 'Chromium', version: useFullVersion ? fullVersion : majorVersion },
+      { brand: this.getBrowserBrand(), version: useFullVersion ? fullVersion : majorVersion }
+    ]
+  }
+
+  private buildExtraHttpHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Accept-Language': this.buildAcceptLanguageHeader()
+    }
+
+    if (this.fingerprintConfig.software.doNotTrack) {
+      headers.DNT = '1'
+    }
+
+    return headers
+  }
+
+  private buildAcceptLanguageHeader(): string {
+    const languages = this.buildLanguages()
+    return languages
+      .map((language, index) => {
+        if (index === 0) {
+          return language
+        }
+
+        const q = Math.max(0.1, 1 - index * 0.1)
+        return `${language};q=${q.toFixed(1)}`
+      })
+      .join(', ')
+  }
+
+  private buildLanguages(): string[] {
+    const primary = this.fingerprintConfig.software.locale
+    const languagePart = primary.split('-')[0]
+    const candidates = [primary, languagePart, 'en-US', 'en']
+    return Array.from(new Set(candidates.filter((value) => value && value.length >= 2)))
+  }
+
+  private getBrowserBrand(): string {
+    const secChUa = this.fingerprintConfig.secChUa ?? ''
+    const matcher = /"([^"]+)"\s*;\s*v="([^"]+)"/g
+    let match = matcher.exec(secChUa)
+
+    while (match) {
+      const brand = match[1]
+      if (!this.isGreaseBrand(brand) && brand !== 'Chromium') {
+        return brand
+      }
+
+      match = matcher.exec(secChUa)
+    }
+
+    if (this.fingerprintConfig.userAgent.includes('Edg/')) {
+      return 'Microsoft Edge'
+    }
+
+    if (this.fingerprintConfig.userAgent.includes('OPR/')) {
+      return 'Opera'
+    }
+
+    if (this.fingerprintConfig.userAgent.includes('Vivaldi/')) {
+      return 'Vivaldi'
+    }
+
+    return 'Google Chrome'
+  }
+
+  private getClientHintPlatform(): string {
+    if (this.fingerprintConfig.software.platform === 'MacIntel') {
+      return 'macOS'
+    }
+
+    if (this.fingerprintConfig.software.platform.includes('Linux')) {
+      return 'Linux'
+    }
+
+    return 'Windows'
+  }
+
+  private getClientHintPlatformVersion(): string {
+    const platform = this.getClientHintPlatform()
+
+    if (platform === 'Linux') {
+      return '6.14.0'
+    }
+
+    if (platform === 'macOS') {
+      return '15.5.0'
+    }
+
+    return this.fingerprintConfig.userAgent.includes('Windows NT 10.0') ? '15.0.0' : '10.0.0'
+  }
+
+  private getArchitecture(): string {
+    if (/arm|aarch64/i.test(this.fingerprintConfig.userAgent)) {
+      return 'arm'
+    }
+
+    return 'x86'
+  }
+
+  private getBitness(): string {
+    return /x64|Win64|x86_64/i.test(this.fingerprintConfig.userAgent) ? '64' : '32'
+  }
+
+  private extractBrowserVersion(userAgent: string): string | null {
+    const match = userAgent.match(/(?:Chrome|Edg|OPR|Vivaldi)\/([\d.]+)/)
+    return match?.[1] ?? null
+  }
+
+  private isGreaseBrand(brand: string): boolean {
+    const normalized = brand.toLowerCase()
+    return normalized.includes('not') && normalized.includes('brand')
+  }
+
+  private getHelperSymbolKey(): string {
+    return `__xuss.fingerprint.${this.profileId}`
   }
 
   private async send<TResult>(

@@ -19,6 +19,11 @@ import type {
 } from '@shared/types'
 
 const execFileAsync = promisify(execFile)
+const DEFAULT_PLATFORM_VERSION: Record<string, string> = {
+  windows: '15.0.0',
+  linux: '6.14.0',
+  macos: '15.5.0'
+}
 
 interface ActiveBrowserInstance extends BrowserInstanceInfo {
   process: ChildProcess
@@ -203,16 +208,16 @@ export class BrowserLauncher extends EventEmitter {
       '--password-store=basic',
       // Anti-detection flags
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-features=IsolateOrigins,site-per-process,Translate',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
-      '--disable-ipc-flooding-protection',
-      '--disable-features=Translate'
+      '--disable-ipc-flooding-protection'
     ]
 
     if (fingerprintConfig) {
       args.push(`--user-agent=${fingerprintConfig.userAgent}`)
+      args.push(...this.buildFingerprintSwitches(profile, fingerprintConfig))
     }
 
     if (profile.proxyConfig && profile.proxyConfig.type !== 'none') {
@@ -321,8 +326,10 @@ export class BrowserLauncher extends EventEmitter {
     const injectionScript = await this.buildInjectionScript(profile.id, fingerprintConfig)
     const debuggerClient = new BrowserDebugger(
       websocketUrl,
+      profile.id,
       injectionScript,
-      profile.browserConfig.homeUrl
+      profile.browserConfig.homeUrl,
+      fingerprintConfig
     )
     await debuggerClient.initialize()
     logger.info(`Fingerprint injection ready for profile ${profile.id}`)
@@ -353,5 +360,102 @@ export class BrowserLauncher extends EventEmitter {
       websocketUrl: instance.websocketUrl,
       startTime: instance.startTime
     }
+  }
+
+  private buildFingerprintSwitches(profile: Profile, fingerprintConfig: FingerprintConfig): string[] {
+    const platform = this.toFingerprintPlatform(fingerprintConfig.software.platform)
+    const brandVersion = this.extractBrowserVersion(fingerprintConfig.userAgent) ?? '142.0.7444.175'
+    const platformVersion =
+      this.derivePlatformVersion(profile.fingerprintOs, platform) ?? DEFAULT_PLATFORM_VERSION[platform]
+
+    return [
+      '--fingerprinting-client-rects-noise',
+      '--fingerprinting-canvas-measure-text-noise',
+      '--fingerprinting-canvas-image-data-noise',
+      `--fingerprint=${this.buildFingerprintSeed(profile.id, fingerprintConfig)}`,
+      `--fingerprint-brand=${this.extractBrowserBrand(fingerprintConfig)}`,
+      `--fingerprint-brand-version=${brandVersion}`,
+      `--fingerprint-gpu-vendor=${fingerprintConfig.hardware.gpu.vendor}`,
+      `--fingerprint-gpu-renderer=${fingerprintConfig.hardware.gpu.renderer}`,
+      `--fingerprint-hardware-concurrency=${fingerprintConfig.hardware.cpuCores}`,
+      `--fingerprint-platform=${platform}`,
+      `--fingerprint-platform-version=${platformVersion}`,
+      `--timezone=${fingerprintConfig.software.timezone}`
+    ]
+  }
+
+  private buildFingerprintSeed(profileId: string, fingerprintConfig: FingerprintConfig): string {
+    const input = `${profileId}:${fingerprintConfig.userAgent}:${fingerprintConfig.software.platform}`
+    let hash = 2166136261
+
+    for (let index = 0; index < input.length; index += 1) {
+      hash ^= input.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+
+    return `${hash >>> 0}`
+  }
+
+  private extractBrowserBrand(fingerprintConfig: FingerprintConfig): string {
+    const secChUa = fingerprintConfig.secChUa ?? ''
+    const matcher = /"([^"]+)"\s*;\s*v="([^"]+)"/g
+    let match = matcher.exec(secChUa)
+
+    while (match) {
+      const brand = match[1]
+      const normalized = brand.toLowerCase()
+
+      if (!normalized.includes('not') && normalized !== 'chromium') {
+        return brand
+      }
+
+      match = matcher.exec(secChUa)
+    }
+
+    if (fingerprintConfig.userAgent.includes('Edg/')) {
+      return 'Microsoft Edge'
+    }
+
+    if (fingerprintConfig.userAgent.includes('OPR/')) {
+      return 'Opera'
+    }
+
+    if (fingerprintConfig.userAgent.includes('Vivaldi/')) {
+      return 'Vivaldi'
+    }
+
+    return 'Google Chrome'
+  }
+
+  private extractBrowserVersion(userAgent: string): string | null {
+    const match = userAgent.match(/(?:Chrome|Edg|OPR|Vivaldi)\/([\d.]+)/)
+    return match?.[1] ?? null
+  }
+
+  private toFingerprintPlatform(platform: string): 'windows' | 'linux' | 'macos' {
+    if (platform === 'MacIntel') {
+      return 'macos'
+    }
+
+    if (platform.includes('Linux')) {
+      return 'linux'
+    }
+
+    return 'windows'
+  }
+
+  private derivePlatformVersion(
+    fingerprintOs: Profile['fingerprintOs'],
+    platform: 'windows' | 'linux' | 'macos'
+  ): string {
+    if (platform === 'windows') {
+      return fingerprintOs === 'win10' ? '10.0.0' : '15.0.0'
+    }
+
+    if (platform === 'linux') {
+      return '6.14.0'
+    }
+
+    return '15.5.0'
   }
 }
