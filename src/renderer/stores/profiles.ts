@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { toPlainData } from '@renderer/utils/serialization'
 import type {
   CreateProfileInput,
   DeleteProfileInput,
@@ -45,7 +46,7 @@ export const useProfileStore = defineStore('profiles', () => {
     error.value = null
 
     try {
-      const result = await window.api.db.createProfile(input)
+      const result = await window.api.db.createProfile(toPlainData(input))
 
       if (!result.success) {
         error.value = result.error
@@ -67,7 +68,7 @@ export const useProfileStore = defineStore('profiles', () => {
     error.value = null
 
     try {
-      const result = await window.api.db.updateProfile(input)
+      const result = await window.api.db.updateProfile(toPlainData(input))
 
       if (!result.success) {
         error.value = result.error

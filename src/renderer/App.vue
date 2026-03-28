@@ -171,14 +171,15 @@ onMounted(async () => {
       </nav>
 
       <div class="app-sidebar__promo">
-        <div class="promo-qr">
+        <!-- <div class="promo-qr">
           <div class="promo-qr__badge">工</div>
-        </div>
+        </div> -->
+        <!-- 左下角二维码 -->
         <div class="promo-copy">
-          <strong>MospaceBrowser 技术交流群</strong>
-          <span>群号：564142956</span>
+          <strong>MospaceBrowser</strong>
+          <!-- <span>群号：564142</span> -->
         </div>
-        <div class="promo-meta">QQ Group: 564142956</div>
+        <!-- <div class="promo-meta">QQ Group: 564142956</div> -->
       </div>
     </aside>
 
@@ -200,14 +201,15 @@ onMounted(async () => {
         </div>
 
         <div class="admin-topbar__right">
-          <button class="admin-topbar__tool" type="button">A文</button>
-          <button class="admin-topbar__link" type="button">检查更新</button>
-          <button class="admin-topbar__link admin-topbar__link--accent" type="button">
+          <!-- <button class="admin-topbar__tool" type="button">A文</button> -->
+          <!-- <button class="admin-topbar__link" type="button">检查更新</button> -->
+          <!-- <button class="admin-topbar__link admin-topbar__link--accent" type="button">
             会员中心
-          </button>
+          </button> -->
           <div class="admin-topbar__user">
             <el-icon><UserFilled /></el-icon>
-            <span>2978632701@qq.com</span>
+            <!-- <span>2978632701@qq.com</span> -->
+            <span>Mospace@admin</span>
             <el-icon><ArrowDown /></el-icon>
           </div>
         </div>

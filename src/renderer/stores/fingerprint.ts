@@ -1,5 +1,6 @@
-import { computed, ref, toRaw } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { toPlainData } from '@renderer/utils/serialization'
 import type { FingerprintConfig, FingerprintGenerationOptions, OSType } from '@shared/types'
 
 export const useFingerprintStore = defineStore('fingerprint', () => {
@@ -47,7 +48,7 @@ export const useFingerprintStore = defineStore('fingerprint', () => {
 
   async function validateFingerprint(config: FingerprintConfig): Promise<boolean> {
     try {
-      const payload = structuredClone(toRaw(config))
+      const payload = toPlainData(config)
       const result = await window.api.fingerprint.validate(payload)
 
       if (!result.success) {
