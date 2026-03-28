@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -71,21 +71,6 @@ const sortedProfiles = computed(() => {
   return [...profileStore.profiles].sort((left, right) => {
     return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   })
-})
-
-const groupOptions = computed(() => {
-  const entries = new Map<string, string>()
-
-  for (const profile of profileStore.profiles) {
-    const value = profile.groupId?.trim() || 'default'
-    const label = profile.groupId?.trim() || '默认分组'
-    entries.set(value, label)
-  }
-
-  return [
-    { label: '按分组筛选', value: 'all' },
-    ...Array.from(entries.entries()).map(([value, label]) => ({ label, value }))
-  ]
 })
 
 const groupFilterOptions = computed(() => {
@@ -168,10 +153,6 @@ function handleSelectionChange(rows: Profile[]): void {
 
 function getRunningLabel(profileId: string): string {
   return launcherStore.isRunning(profileId) ? '运行中' : '未启动'
-}
-
-function getGroupLabel(profile: Profile): string {
-  return profile.groupId?.trim() || '默认分组'
 }
 
 function resolveGroupLabel(profile: Profile): string {

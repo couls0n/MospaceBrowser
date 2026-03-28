@@ -87,6 +87,44 @@ interface UserAgentMetadataBrand {
   version: string
 }
 
+type LoadState = 'interactive' | 'complete'
+
+interface WaitForSelectorOptions {
+  timeout?: number
+  state?: 'attached' | 'detached' | 'visible' | 'hidden'
+}
+
+interface BrowserControlConsole {
+  log: (...values: unknown[]) => void
+  info: (...values: unknown[]) => void
+  warn: (...values: unknown[]) => void
+  error: (...values: unknown[]) => void
+}
+
+interface PageAutomationApi {
+  url: () => Promise<string>
+  title: () => Promise<string>
+  goto: (url: string) => Promise<BrowserControlTab>
+  reload: () => Promise<BrowserControlTab>
+  waitForTimeout: (ms: number) => Promise<void>
+  waitForLoadState: (state?: LoadState, timeoutMs?: number) => Promise<void>
+  evaluate: (script: string | ((arg?: unknown) => unknown), arg?: unknown) => Promise<unknown>
+  click: (selector: string) => Promise<void>
+  fill: (selector: string, value: string) => Promise<void>
+  type: (selector: string, value: string) => Promise<void>
+  press: (selector: string, key: string) => Promise<void>
+  exists: (selector: string) => Promise<boolean>
+  textContent: (selector: string) => Promise<string | null>
+  html: (selector: string) => Promise<string | null>
+  waitForSelector: (selector: string, options?: WaitForSelectorOptions) => Promise<void>
+}
+
+interface BrowserAutomationApi {
+  tabs: () => Promise<BrowserControlTab[]>
+  activateTab: (sessionId: string) => Promise<BrowserControlTab>
+  newTab: (url?: string) => Promise<BrowserControlTab>
+}
+
 type PendingRequest<TResult> = {
   resolve: (value: TResult) => void
   reject: (error: Error) => void
@@ -744,7 +782,7 @@ export class BrowserDebugger {
     return (evaluation.result?.value as TResult) ?? (undefined as TResult)
   }
 
-  private createControlConsole(logs: BrowserControlLogEntry[]) {
+  private createControlConsole(logs: BrowserControlLogEntry[]): BrowserControlConsole {
     const push = (level: BrowserControlLogEntry['level'], ...values: unknown[]): void => {
       logs.push({
         level,
@@ -761,7 +799,7 @@ export class BrowserDebugger {
     }
   }
 
-  private createPageAutomationApi(sessionId: string) {
+  private createPageAutomationApi(sessionId: string): PageAutomationApi {
     return {
       url: async () =>
         this.evaluateInSession<string>(sessionId, 'globalThis.location?.href ?? "about:blank"'),
@@ -779,7 +817,7 @@ export class BrowserDebugger {
       waitForTimeout: async (ms: number) => {
         await new Promise((resolve) => setTimeout(resolve, ms))
       },
-      waitForLoadState: async (state: 'interactive' | 'complete' = 'complete', timeoutMs = 15000) => {
+      waitForLoadState: async (state: LoadState = 'complete', timeoutMs = 15000) => {
         await this.waitForLoadState(sessionId, state, timeoutMs)
       },
       evaluate: async (script: string | ((arg?: unknown) => unknown), arg?: unknown) => {
@@ -866,14 +904,14 @@ export class BrowserDebugger {
         ),
       waitForSelector: async (
         selector: string,
-        options?: { timeout?: number; state?: 'attached' | 'detached' | 'visible' | 'hidden' }
+        options?: WaitForSelectorOptions
       ) => {
         await this.waitForSelector(sessionId, selector, options)
       }
     }
   }
 
-  private createBrowserAutomationApi() {
+  private createBrowserAutomationApi(): BrowserAutomationApi {
     return {
       tabs: async () => this.listControlTabs(),
       activateTab: async (sessionId: string) => {

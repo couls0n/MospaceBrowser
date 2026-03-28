@@ -1,6 +1,10 @@
 import { toRaw } from 'vue'
 
-function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
+function getPathLabel(path: string): string {
+  return path || 'root'
+}
+
+function normalize(value: unknown, seen: WeakMap<object, unknown>, path: string): unknown {
   if (value === null || value === undefined) {
     return value
   }
@@ -12,11 +16,11 @@ function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
   }
 
   if (valueType === 'bigint') {
-    return Number(value)
+    return value.toString()
   }
 
   if (valueType === 'function' || valueType === 'symbol') {
-    return undefined
+    throw new Error(`Unsupported ${valueType} value at ${getPathLabel(path)}.`)
   }
 
   if (valueType !== 'object') {
@@ -30,9 +34,7 @@ function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
   }
 
   if (Array.isArray(rawValue)) {
-    return rawValue
-      .map((item) => normalize(item, seen))
-      .filter((item) => item !== undefined)
+    return rawValue.map((item, index) => normalize(item, seen, `${path}[${index}]`))
   }
 
   if (rawValue instanceof Date) {
@@ -43,11 +45,9 @@ function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
     const mapped: Record<string, unknown> = {}
 
     for (const [key, entryValue] of rawValue.entries()) {
-      const normalizedEntry = normalize(entryValue, seen)
-
-      if (normalizedEntry !== undefined) {
-        mapped[String(key)] = normalizedEntry
-      }
+      const keyText = String(key)
+      const childPath = path ? `${path}.${keyText}` : keyText
+      mapped[keyText] = normalize(entryValue, seen, childPath)
     }
 
     return mapped
@@ -55,15 +55,16 @@ function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
 
   if (rawValue instanceof Set) {
     return Array.from(rawValue.values())
-      .map((item) => normalize(item, seen))
-      .filter((item) => item !== undefined)
+      .map((item, index) => normalize(item, seen, `${path}[${index}]`))
   }
 
   const constructorName = (rawValue as { constructor?: { name?: string } }).constructor?.name
 
   if (constructorName && constructorName !== 'Object') {
-    // Host objects (Window, HTMLElement, etc.) cannot be sent over Electron IPC.
-    return undefined
+    throw new Error(
+      `Unsupported object "${constructorName}" at ${getPathLabel(path)}. ` +
+        'Please provide plain JSON-serializable data.'
+    )
   }
 
   if (seen.has(rawValue)) {
@@ -74,16 +75,13 @@ function normalize(value: unknown, seen: WeakMap<object, unknown>): unknown {
   seen.set(rawValue, normalizedObject)
 
   for (const [key, entryValue] of Object.entries(rawValue)) {
-    const normalizedEntry = normalize(entryValue, seen)
-
-    if (normalizedEntry !== undefined) {
-      normalizedObject[key] = normalizedEntry
-    }
+    const childPath = path ? `${path}.${key}` : key
+    normalizedObject[key] = normalize(entryValue, seen, childPath)
   }
 
   return normalizedObject
 }
 
 export function toPlainData<T>(input: T): T {
-  return normalize(input, new WeakMap()) as T
+  return normalize(input, new WeakMap(), '') as T
 }

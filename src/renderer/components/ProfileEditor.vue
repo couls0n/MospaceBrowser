@@ -169,14 +169,14 @@ function rewriteSecChUaVersion(secChUa: string | undefined, majorVersion: string
     return undefined
   }
 
-  return secChUa.replace(/\"([^\"]+)\"\s*;\s*v=\"([^\"]+)\"/g, (_matched, brand: string) => {
+  return secChUa.replace(/"([^"]+)"\s*;\s*v="([^"]+)"/g, (_matched, brand: string) => {
     const normalized = brand.toLowerCase()
 
     if (normalized.includes('not')) {
-      return `\"${brand}\";v=\"8\"`
+      return `"${brand}";v="8"`
     }
 
-    return `\"${brand}\";v=\"${majorVersion}\"`
+    return `"${brand}";v="${majorVersion}"`
   })
 }
 
