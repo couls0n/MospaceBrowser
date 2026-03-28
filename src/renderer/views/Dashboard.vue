@@ -19,13 +19,15 @@ import {
 } from '@element-plus/icons-vue'
 import { DEFAULT_BROWSER_CONFIG } from '@shared/constants'
 import ProfileEditor from '@renderer/components/ProfileEditor.vue'
+import { useGroupStore } from '@renderer/stores/groups'
 import { useLauncherStore } from '@renderer/stores/launcher'
 import { useProfileStore } from '@renderer/stores/profiles'
-import type { CreateProfileInput, Profile, UpdateProfileInput } from '@shared/types'
+import type { CreateProfileInput, GroupRecord, Profile, UpdateProfileInput } from '@shared/types'
 
 interface ExportPayload {
   version: number
   exportedAt: string
+  groups?: GroupRecord[]
   profiles: CreateProfileInput[]
 }
 
@@ -34,6 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const profileStore = useProfileStore()
+const groupStore = useGroupStore()
 const launcherStore = useLauncherStore()
 
 const editorVisible = ref(false)
@@ -74,6 +77,17 @@ const groupOptions = computed(() => {
   ]
 })
 
+const groupFilterOptions = computed(() => {
+  return [
+    { label: 'All Groups', value: 'all' },
+    { label: 'Default Group', value: 'default' },
+    ...groupStore.groups.map((group) => ({
+      label: group.name,
+      value: group.id
+    }))
+  ]
+})
+
 const filteredProfiles = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
 
@@ -93,7 +107,7 @@ const filteredProfiles = computed(() => {
     const haystack = [
       profile.name,
       profile.notes ?? '',
-      profile.groupId ?? '',
+      resolveGroupLabel(profile),
       profile.proxyConfig?.host ?? ''
     ]
       .join(' ')
@@ -124,7 +138,7 @@ watch(totalProfiles, (total) => {
 })
 
 async function refresh(): Promise<void> {
-  await Promise.all([profileStore.loadProfiles(), launcherStore.syncRunning()])
+  await Promise.all([profileStore.loadProfiles(), groupStore.loadGroups(), launcherStore.syncRunning()])
 }
 
 function openCreateDialog(): void {
@@ -147,6 +161,14 @@ function getRunningLabel(profileId: string): string {
 
 function getGroupLabel(profile: Profile): string {
   return profile.groupId?.trim() || '默认分组'
+}
+
+function resolveGroupLabel(profile: Profile): string {
+  return groupStore.getGroupById(profile.groupId)?.name || 'Default Group'
+}
+
+function resolveGroupColor(profile: Profile): string {
+  return groupStore.getGroupById(profile.groupId)?.color || '#cbd5e1'
 }
 
 function getProxyLabel(profile: Profile): string {
@@ -387,6 +409,9 @@ function exportProfiles(): void {
   const payload: ExportPayload = {
     version: 1,
     exportedAt: new Date().toISOString(),
+    groups: groupStore.groups.filter((group) =>
+      exportSource.some((profile) => profile.groupId === group.id)
+    ),
     profiles: exportSource.map((profile) => ({
       name: profile.name,
       notes: profile.notes,
@@ -420,6 +445,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function normalizeImportedGroups(payload: unknown): GroupRecord[] {
+  if (!isRecord(payload) || !Array.isArray(payload.groups)) {
+    return []
+  }
+
+  return payload.groups
+    .filter(isRecord)
+    .map((group, index) => ({
+      id: typeof group.id === 'string' ? group.id : crypto.randomUUID(),
+      name: String(group.name || `Imported Group ${index + 1}`),
+      color: typeof group.color === 'string' ? group.color : '#2563eb',
+      sortOrder: typeof group.sortOrder === 'number' ? group.sortOrder : index
+    }))
+}
+
 function normalizeImportedProfiles(payload: unknown): CreateProfileInput[] {
   if (Array.isArray(payload)) {
     return payload.filter(isRecord).map(toImportedProfile)
@@ -430,6 +470,33 @@ function normalizeImportedProfiles(payload: unknown): CreateProfileInput[] {
   }
 
   return []
+}
+
+async function ensureImportedGroups(groups: GroupRecord[]): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>()
+
+  for (const group of groups) {
+    const existing = groupStore.groups.find(
+      (item) => item.name.trim().toLowerCase() === group.name.trim().toLowerCase()
+    )
+
+    if (existing) {
+      idMap.set(group.id, existing.id)
+      continue
+    }
+
+    const created = await groupStore.createGroup({
+      name: group.name,
+      color: group.color,
+      sortOrder: group.sortOrder
+    })
+
+    if (created) {
+      idMap.set(group.id, created.id)
+    }
+  }
+
+  return idMap
 }
 
 function toImportedProfile(source: Record<string, unknown>): CreateProfileInput {
@@ -516,7 +583,9 @@ async function handleImportFile(event: Event): Promise<void> {
 
   try {
     const content = await file.text()
-    const imported = normalizeImportedProfiles(JSON.parse(content))
+    const parsed = JSON.parse(content)
+    const importedGroups = normalizeImportedGroups(parsed)
+    const imported = normalizeImportedProfiles(parsed)
 
     if (!imported.length) {
       ElMessage.error('导入文件中没有识别到可用的浏览器配置。')
@@ -525,9 +594,13 @@ async function handleImportFile(event: Event): Promise<void> {
     }
 
     let successCount = 0
+    const importedGroupIdMap = await ensureImportedGroups(importedGroups)
 
     for (const payload of imported) {
-      const created = await profileStore.createProfile(payload)
+      const created = await profileStore.createProfile({
+        ...payload,
+        groupId: payload.groupId ? importedGroupIdMap.get(payload.groupId) : undefined
+      })
 
       if (created) {
         successCount += 1
@@ -620,7 +693,7 @@ onMounted(async () => {
         <div class="list-toolbar__right">
           <el-select v-model="groupFilter" class="toolbar-select">
             <el-option
-              v-for="option in groupOptions"
+              v-for="option in groupFilterOptions"
               :key="option.value"
               :label="option.label"
               :value="option.value"
@@ -678,7 +751,12 @@ onMounted(async () => {
 
         <el-table-column label="分组" width="150">
           <template #default="scope">
-            <span class="group-tag">{{ getGroupLabel(scope.row) }}</span>
+            <span
+              class="group-tag"
+              :style="{ borderColor: resolveGroupColor(scope.row), color: resolveGroupColor(scope.row) }"
+            >
+              {{ resolveGroupLabel(scope.row) }}
+            </span>
           </template>
         </el-table-column>
 

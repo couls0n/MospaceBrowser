@@ -6,10 +6,13 @@ import type {
   BrowserExecutablePathInfo,
   CloneProfileInput,
   CreateProfileInput,
+  CreateGroupInput,
   CreateProxyInput,
+  DeleteGroupInput,
   DeleteProfileInput,
   FingerprintConfig,
   FingerprintGenerationOptions,
+  GroupRecord,
   IPCResponse,
   LauncherStatusChange,
   Profile,
@@ -17,6 +20,7 @@ import type {
   ProxyCheckResult,
   ProxyRecord,
   SystemPaths,
+  UpdateGroupInput,
   UpdateProfileInput
 } from '@shared/types'
 
@@ -28,6 +32,10 @@ export interface XussApi {
     updateProfile: (input: UpdateProfileInput) => Promise<IPCResponse<Profile>>
     deleteProfile: (input: DeleteProfileInput) => Promise<IPCResponse<void>>
     cloneProfile: (input: CloneProfileInput) => Promise<IPCResponse<Profile>>
+    createGroup: (input: CreateGroupInput) => Promise<IPCResponse<GroupRecord>>
+    getGroups: () => Promise<IPCResponse<GroupRecord[]>>
+    updateGroup: (input: UpdateGroupInput) => Promise<IPCResponse<GroupRecord>>
+    deleteGroup: (input: DeleteGroupInput) => Promise<IPCResponse<void>>
     createProxy: (input: CreateProxyInput) => Promise<IPCResponse<ProxyRecord>>
     getProxies: () => Promise<IPCResponse<ProxyRecord[]>>
     deleteProxy: (input: { id: string }) => Promise<IPCResponse<void>>
@@ -65,6 +73,10 @@ const api: XussApi = {
     updateProfile: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.PROFILE_UPDATE, input),
     deleteProfile: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.PROFILE_DELETE, input),
     cloneProfile: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.PROFILE_CLONE, input),
+    createGroup: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.GROUP_CREATE, input),
+    getGroups: () => ipcRenderer.invoke(IPC_CHANNELS.DB.GROUP_GET_ALL),
+    updateGroup: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.GROUP_UPDATE, input),
+    deleteGroup: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.GROUP_DELETE, input),
     createProxy: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.PROXY_CREATE, input),
     getProxies: () => ipcRenderer.invoke(IPC_CHANNELS.DB.PROXY_GET_ALL),
     deleteProxy: (input) => ipcRenderer.invoke(IPC_CHANNELS.DB.PROXY_DELETE, input),

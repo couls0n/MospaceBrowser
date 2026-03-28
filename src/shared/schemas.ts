@@ -88,6 +88,23 @@ export const CloneProfileSchema = z.object({
   name: z.string().min(1).max(100).optional()
 })
 
+export const CreateGroupSchema = z.object({
+  name: z.string().min(1).max(100),
+  color: z.string().regex(/^#(?:[0-9a-fA-F]{3}){1,2}$/).optional(),
+  sortOrder: z.number().int().min(0).optional()
+})
+
+export const UpdateGroupSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(100).optional(),
+  color: z.string().regex(/^#(?:[0-9a-fA-F]{3}){1,2}$/).optional(),
+  sortOrder: z.number().int().min(0).optional()
+})
+
+export const DeleteGroupSchema = z.object({
+  id: z.string().uuid()
+})
+
 export const ProfileFilterSchema = z.object({
   groupId: z.string().uuid().optional()
 })

@@ -45,6 +45,30 @@ export interface Profile {
   groupId?: string
 }
 
+export interface GroupRecord {
+  id: string
+  name: string
+  color: string
+  sortOrder: number
+}
+
+export interface CreateGroupInput {
+  name: string
+  color?: string
+  sortOrder?: number
+}
+
+export interface UpdateGroupInput {
+  id: string
+  name?: string
+  color?: string
+  sortOrder?: number
+}
+
+export interface DeleteGroupInput {
+  id: string
+}
+
 export interface CreateProfileInput {
   name: string
   notes?: string

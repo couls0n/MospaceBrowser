@@ -15,6 +15,7 @@ import type { SystemPaths } from '@shared/types'
 import AdminPlaceholder from '@renderer/components/AdminPlaceholder.vue'
 import mospaceLogo from '@renderer/assets/mospace-logo.svg'
 import Dashboard from '@renderer/views/Dashboard.vue'
+import GroupsView from '@renderer/views/GroupsView.vue'
 import Settings from '@renderer/views/Settings.vue'
 
 type ViewName = 'browser-list' | 'browser-groups' | 'plugins' | 'proxies' | 'api' | 'settings'
@@ -221,8 +222,10 @@ onMounted(async () => {
           @back="activeView = 'browser-list'"
         />
 
+        <groups-view v-else-if="activeView === 'browser-groups'" />
+
         <admin-placeholder
-          v-else-if="activeView === 'browser-groups'"
+          v-else-if="false"
           :icon="FolderOpened"
           eyebrow="浏览器"
           title="分组管理"

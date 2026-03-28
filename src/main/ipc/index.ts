@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { fingerprintHandlers } from '@main/ipc/handlers/fingerprint'
+import { groupHandlers } from '@main/ipc/handlers/group'
 import { launcherHandlers } from '@main/ipc/handlers/launcher'
 import { profileHandlers } from '@main/ipc/handlers/profile'
 import { proxyHandlers } from '@main/ipc/handlers/proxy'
@@ -33,6 +34,7 @@ function toFailure(error: unknown): IPCResponse<never> {
 export function registerIpcHandlers(): void {
   const handlers = [
     ...profileHandlers,
+    ...groupHandlers,
     ...proxyHandlers,
     ...launcherHandlers,
     ...fingerprintHandlers,

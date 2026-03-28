@@ -1,4 +1,4 @@
-import type { Profile as PrismaProfile, Proxy as PrismaProxy } from '@prisma/client'
+import type { Group as PrismaGroup, Profile as PrismaProfile, Proxy as PrismaProxy } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,15 +10,19 @@ import type {
   BrowserProfileConfig,
   CloneProfileInput,
   CreateProfileInput,
+  CreateGroupInput,
   CreateProxyInput,
+  DeleteGroupInput,
   DeleteProfileInput,
   FingerprintConfig,
   FingerprintGenerationOptions,
+  GroupRecord,
   OSType,
   Profile,
   ProfileFilter,
   ProfileProxyConfig,
   ProxyRecord,
+  UpdateGroupInput,
   UpdateProfileInput
 } from '@shared/types'
 
@@ -282,6 +286,115 @@ export class ProfileManager {
     return this.toProxy(proxy)
   }
 
+  public async createGroup(input: CreateGroupInput): Promise<GroupRecord> {
+    const prisma = await this.databaseManager.getClient()
+    const name = input.name.trim()
+
+    if (!name) {
+      throw new Error('Group name is required.')
+    }
+
+    const existing = await prisma.group.findFirst({
+      where: {
+        name
+      }
+    })
+
+    if (existing) {
+      throw new Error(`Group "${name}" already exists.`)
+    }
+
+    const sortOrder =
+      input.sortOrder ??
+      ((await prisma.group.aggregate({
+        _max: {
+          sortOrder: true
+        }
+      }))._max.sortOrder ?? -1) + 1
+
+    const group = await prisma.group.create({
+      data: {
+        id: randomUUID(),
+        name,
+        color: input.color ?? '#2563eb',
+        sortOrder
+      }
+    })
+
+    return this.toGroup(group)
+  }
+
+  public async getGroups(): Promise<GroupRecord[]> {
+    const prisma = await this.databaseManager.getClient()
+    const groups = await prisma.group.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+    })
+
+    return groups.map((group) => this.toGroup(group))
+  }
+
+  public async updateGroup(input: UpdateGroupInput): Promise<GroupRecord> {
+    const prisma = await this.databaseManager.getClient()
+    const current = await prisma.group.findUnique({
+      where: { id: input.id }
+    })
+
+    if (!current) {
+      throw new Error(`Group ${input.id} not found.`)
+    }
+
+    const nextName = input.name?.trim() || current.name
+
+    const duplicate = await prisma.group.findFirst({
+      where: {
+        id: {
+          not: input.id
+        },
+        name: nextName
+      }
+    })
+
+    if (duplicate) {
+      throw new Error(`Group "${nextName}" already exists.`)
+    }
+
+    const group = await prisma.group.update({
+      where: { id: input.id },
+      data: {
+        name: nextName,
+        color: input.color ?? current.color,
+        sortOrder: input.sortOrder ?? current.sortOrder
+      }
+    })
+
+    return this.toGroup(group)
+  }
+
+  public async deleteGroup(input: DeleteGroupInput): Promise<void> {
+    const prisma = await this.databaseManager.getClient()
+    const group = await prisma.group.findUnique({
+      where: { id: input.id }
+    })
+
+    if (!group) {
+      throw new Error(`Group ${input.id} not found.`)
+    }
+
+    await prisma.$transaction([
+      prisma.profile.updateMany({
+        where: {
+          groupId: input.id
+        },
+        data: {
+          groupId: null
+        }
+      }),
+      prisma.group.delete({
+        where: { id: input.id }
+      })
+    ])
+  }
+
   public async getProxies(): Promise<ProxyRecord[]> {
     const prisma = await this.databaseManager.getClient()
     const proxies = await prisma.proxy.findMany({
@@ -334,6 +447,15 @@ export class ProfileManager {
       isActive: proxy.isActive,
       createdAt: proxy.createdAt.toISOString(),
       updatedAt: proxy.updatedAt.toISOString()
+    }
+  }
+
+  private toGroup(group: PrismaGroup): GroupRecord {
+    return {
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      sortOrder: group.sortOrder
     }
   }
 

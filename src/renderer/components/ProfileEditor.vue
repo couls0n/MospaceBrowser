@@ -3,6 +3,7 @@ import { computed, reactive, ref, toRaw, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DEFAULT_BROWSER_CONFIG, OS_TYPES } from '@shared/constants'
 import { useFingerprintStore } from '@renderer/stores/fingerprint'
+import { useGroupStore } from '@renderer/stores/groups'
 import {
   COLOR_DEPTH_OPTIONS,
   COMMON_LOCALE_OPTIONS,
@@ -27,6 +28,7 @@ type FingerprintMode = 'default' | 'custom'
 
 interface ProfileFormState {
   name: string
+  groupId: string
   notes: string
   locale: string
   timezone: string
@@ -56,6 +58,7 @@ const emit = defineEmits<{
 }>()
 
 const fingerprintStore = useFingerprintStore()
+const groupStore = useGroupStore()
 const isEditMode = computed(() => Boolean(props.profile))
 const activeStep = ref(0)
 const fingerprintMode = ref<FingerprintMode>('default')
@@ -65,6 +68,7 @@ const isResetting = ref(false)
 
 const form = reactive<ProfileFormState>({
   name: '',
+  groupId: '',
   notes: '',
   locale: DEFAULT_BROWSER_CONFIG.locale,
   timezone: DEFAULT_BROWSER_CONFIG.timezone,
@@ -158,6 +162,7 @@ function getFingerprintGenerationOptions(apply: boolean): {
 
 const localeOptions = computed(() => buildOptionList(COMMON_LOCALE_OPTIONS, form.locale))
 const timezoneOptions = computed(() => buildOptionList(getTimezoneOptions(), form.timezone))
+const groupOptions = computed(() => groupStore.groups)
 const currentFingerprint = computed(() => fingerprintStore.currentFingerprint)
 const presetOs = computed(() => resolveFingerprintPresetOs(currentFingerprint.value ?? defaultFingerprint.value))
 const screenPresets = computed(() => getScreenPresets(presetOs.value))
@@ -219,6 +224,7 @@ function resetForm(profile?: Profile | null): void {
   isResetting.value = true
 
   form.name = profile?.name ?? ''
+  form.groupId = profile?.groupId ?? ''
   form.notes = profile?.notes ?? ''
   form.locale = profile?.browserConfig.locale ?? DEFAULT_BROWSER_CONFIG.locale
   form.timezone = profile?.browserConfig.timezone ?? DEFAULT_BROWSER_CONFIG.timezone
@@ -253,6 +259,7 @@ watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
+      void groupStore.loadGroups()
       resetForm(props.profile)
     }
   }
@@ -530,6 +537,7 @@ async function submit(): Promise<void> {
 
   const payloadBase: CreateProfileInput = {
     name: form.name,
+    groupId: form.groupId || undefined,
     notes: form.notes || undefined,
     browserConfig: {
       locale: form.locale,
@@ -611,6 +619,22 @@ async function submit(): Promise<void> {
             placeholder="补充这个浏览器的用途、账号信息或使用说明"
           />
         </el-form-item>
+
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="分组">
+              <el-select v-model="form.groupId" clearable placeholder="默认分组">
+                <el-option label="默认分组" value="" />
+                <el-option
+                  v-for="group in groupOptions"
+                  :key="group.id"
+                  :label="group.name"
+                  :value="group.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
 
         <el-row :gutter="16">
           <el-col :span="8">
@@ -1127,6 +1151,9 @@ async function submit(): Promise<void> {
 
       <el-descriptions :column="1" border>
         <el-descriptions-item label="浏览器名称">{{ form.name || '未填写' }}</el-descriptions-item>
+        <el-descriptions-item label="分组">
+          {{ groupStore.getGroupById(form.groupId)?.name || '默认分组' }}
+        </el-descriptions-item>
         <el-descriptions-item label="首页地址">{{ form.homeUrl }}</el-descriptions-item>
         <el-descriptions-item label="窗口尺寸">
           {{ form.width }} x {{ form.height }} ({{ form.pixelRatio }}x)
