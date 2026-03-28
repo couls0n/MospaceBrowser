@@ -1,6 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { BrowserInstanceInfo, LauncherStatusChange } from '@shared/types'
+import type {
+  BrowserControlExecutionResult,
+  BrowserControlTab,
+  BrowserInstanceInfo,
+  ExecuteBrowserControlInput,
+  LauncherStatusChange
+} from '@shared/types'
 
 type RunningRecord = Record<string, BrowserInstanceInfo>
 
@@ -81,6 +87,32 @@ export const useLauncherStore = defineStore('launcher', () => {
     return true
   }
 
+  async function getControlTabs(profileId: string): Promise<BrowserControlTab[] | null> {
+    error.value = null
+    const result = await window.api.launcher.getControlTabs({ profileId })
+
+    if (!result.success) {
+      error.value = result.error
+      return null
+    }
+
+    return result.data
+  }
+
+  async function executeControl(
+    input: ExecuteBrowserControlInput
+  ): Promise<BrowserControlExecutionResult | null> {
+    error.value = null
+    const result = await window.api.launcher.executeControl(input)
+
+    if (!result.success) {
+      error.value = result.error
+      return null
+    }
+
+    return result.data
+  }
+
   function applyStatusChange(payload: LauncherStatusChange): void {
     if (payload.status === 'started' && payload.data) {
       runningInstances.value = {
@@ -118,6 +150,8 @@ export const useLauncherStore = defineStore('launcher', () => {
     startProfile,
     stopProfile,
     verifyProfile,
+    getControlTabs,
+    executeControl,
     setupListeners,
     isRunning
   }

@@ -115,6 +115,15 @@ export const StartProfileSchema = z.object({
 
 export const StopProfileSchema = StartProfileSchema
 
+export const GetBrowserControlTabsSchema = StartProfileSchema
+
+export const ExecuteBrowserControlSchema = z.object({
+  profileId: z.string().uuid(),
+  sessionId: z.string().min(1).optional(),
+  script: z.string().min(1),
+  timeoutMs: z.number().int().min(1000).max(120000).optional()
+})
+
 export const OpenDirectorySchema = z.object({
   path: z.string().min(1)
 })

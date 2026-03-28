@@ -18,6 +18,7 @@ import {
   View
 } from '@element-plus/icons-vue'
 import { DEFAULT_BROWSER_CONFIG } from '@shared/constants'
+import BrowserControlDialog from '@renderer/components/BrowserControlDialog.vue'
 import ProfileEditor from '@renderer/components/ProfileEditor.vue'
 import { useGroupStore } from '@renderer/stores/groups'
 import { useLauncherStore } from '@renderer/stores/launcher'
@@ -39,7 +40,9 @@ const profileStore = useProfileStore()
 const groupStore = useGroupStore()
 const launcherStore = useLauncherStore()
 
+const controlVisible = ref(false)
 const editorVisible = ref(false)
+const controllingProfileId = ref<string | null>(null)
 const editingProfileId = ref<string | null>(null)
 const searchKeyword = ref('')
 const groupFilter = ref('all')
@@ -54,6 +57,14 @@ const editingProfile = computed<Profile | null>(() => {
   }
 
   return profileStore.getProfileById(editingProfileId.value) ?? null
+})
+
+const controllingProfile = computed<Profile | null>(() => {
+  if (!controllingProfileId.value) {
+    return null
+  }
+
+  return profileStore.getProfileById(controllingProfileId.value) ?? null
 })
 
 const sortedProfiles = computed(() => {
@@ -291,6 +302,20 @@ async function handleVerify(profileId: string): Promise<void> {
   } else if (launcherStore.error) {
     ElMessage.error(launcherStore.error)
   }
+}
+
+function openControlDialog(profile: Profile): void {
+  if (!launcherStore.isRunning(profile.id)) {
+    ElMessage.warning('请先启动浏览器，再打开控制台。')
+    return
+  }
+
+  controllingProfileId.value = profile.id
+  controlVisible.value = true
+}
+
+function handleControlDialogClosed(): void {
+  controllingProfileId.value = null
 }
 
 async function openDirectory(path: string): Promise<void> {
@@ -797,7 +822,7 @@ onMounted(async () => {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" min-width="290" align="center">
+        <el-table-column label="操作" min-width="390" align="center">
           <template #default="scope">
             <div class="table-actions">
               <el-button
@@ -806,6 +831,15 @@ onMounted(async () => {
               >
                 <el-icon><View /></el-icon>
                 <span>验证</span>
+              </el-button>
+
+              <el-button
+                class="table-action table-action--control"
+                :disabled="!launcherStore.isRunning(scope.row.id)"
+                @click="openControlDialog(scope.row)"
+              >
+                <el-icon><Setting /></el-icon>
+                <span>控制</span>
               </el-button>
 
               <el-button
@@ -872,6 +906,13 @@ onMounted(async () => {
       :profile="editingProfile"
       :saving="profileStore.saving"
       @save="handleSave"
+    />
+
+    <browser-control-dialog
+      v-model="controlVisible"
+      :profile-id="controllingProfile?.id ?? null"
+      :profile-name="controllingProfile?.name"
+      @closed="handleControlDialogClosed"
     />
   </section>
 </template>
@@ -1095,6 +1136,18 @@ onMounted(async () => {
   color: var(--accent-color);
   border: 1px solid #d9d6ff;
   background: #f8f7ff;
+}
+
+.table-action--control {
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+
+.table-action--control:disabled {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .table-action--delete {

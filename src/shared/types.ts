@@ -145,6 +145,37 @@ export interface BrowserInstanceInfo {
   startTime: number
 }
 
+export interface BrowserControlTab {
+  sessionId: string
+  targetId: string
+  title: string
+  url: string
+  readyState?: string | null
+  isPrimary: boolean
+}
+
+export interface BrowserControlLogEntry {
+  level: 'log' | 'info' | 'warn' | 'error'
+  message: string
+  timestamp: string
+}
+
+export interface ExecuteBrowserControlInput {
+  profileId: string
+  sessionId?: string
+  script: string
+  timeoutMs?: number
+}
+
+export interface BrowserControlExecutionResult {
+  success: boolean
+  tab?: BrowserControlTab
+  result?: unknown
+  error?: string
+  logs: BrowserControlLogEntry[]
+  durationMs: number
+}
+
 export interface LauncherStatusChange {
   profileId: string
   status: LauncherStatus

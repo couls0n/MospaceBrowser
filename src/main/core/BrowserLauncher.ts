@@ -12,7 +12,10 @@ import { ProfileManager } from '@main/core/ProfileManager'
 import { logger } from '@main/utils/logger'
 import { DEFAULT_PORTS } from '@shared/constants'
 import type {
+  BrowserControlExecutionResult,
+  BrowserControlTab,
   BrowserInstanceInfo,
+  ExecuteBrowserControlInput,
   FingerprintConfig,
   LauncherStatusChange,
   Profile
@@ -147,13 +150,24 @@ export class BrowserLauncher extends EventEmitter {
   }
 
   public async openVerificationPage(profileId: string): Promise<void> {
-    const instance = this.activeInstances.get(profileId)
+    const debuggerClient = await this.ensureDebugger(profileId)
+    await debuggerClient.openVerificationPage()
+  }
 
-    if (!instance?.debugger) {
-      throw new Error('Profile is not running with an attached debugger session.')
-    }
+  public async getControlTabs(profileId: string): Promise<BrowserControlTab[]> {
+    const debuggerClient = await this.ensureDebugger(profileId)
+    return debuggerClient.listControlTabs()
+  }
 
-    await instance.debugger.openVerificationPage()
+  public async executeControlScript(
+    input: ExecuteBrowserControlInput
+  ): Promise<BrowserControlExecutionResult> {
+    const debuggerClient = await this.ensureDebugger(input.profileId)
+    return debuggerClient.executeControlScript({
+      sessionId: input.sessionId,
+      script: input.script,
+      timeoutMs: input.timeoutMs
+    })
   }
 
   /**
@@ -312,20 +326,43 @@ export class BrowserLauncher extends EventEmitter {
     this.emit('statusChange', event)
   }
 
+  private async ensureDebugger(profileId: string): Promise<BrowserDebugger> {
+    const instance = this.activeInstances.get(profileId)
+
+    if (!instance) {
+      throw new Error('Profile is not running.')
+    }
+
+    if (instance.debugger) {
+      return instance.debugger
+    }
+
+    const profile = await this.profileManager.getProfileById(profileId)
+    const fingerprintConfig = await this.prepareFingerprintConfig(profile)
+    const websocketUrl = instance.websocketUrl ?? (await this.waitForDebuggerUrl(instance.debuggingPort))
+
+    if (!websocketUrl) {
+      throw new Error('Remote debugging websocket URL was not available for this browser.')
+    }
+
+    instance.websocketUrl = websocketUrl
+    instance.debugger = await this.initializeDebugger(profile, fingerprintConfig, websocketUrl)
+
+    return instance.debugger
+  }
+
   private async initializeDebugger(
     profile: Profile,
     fingerprintConfig: FingerprintConfig | undefined,
     websocketUrl: string | undefined
-  ): Promise<BrowserDebugger | undefined> {
-    if (!fingerprintConfig) {
-      return undefined
-    }
-
+  ): Promise<BrowserDebugger> {
     if (!websocketUrl) {
-      throw new Error('Remote debugging websocket URL was not available for fingerprint injection.')
+      throw new Error('Remote debugging websocket URL was not available for this browser session.')
     }
 
-    const injectionScript = await this.buildInjectionScript(profile.id, fingerprintConfig)
+    const injectionScript = fingerprintConfig
+      ? await this.buildInjectionScript(profile.id, fingerprintConfig)
+      : undefined
     const debuggerClient = new BrowserDebugger(
       websocketUrl,
       profile.id,
@@ -334,7 +371,11 @@ export class BrowserLauncher extends EventEmitter {
       fingerprintConfig
     )
     await debuggerClient.initialize()
-    logger.info(`Fingerprint injection ready for profile ${profile.id}`)
+    logger.info(
+      fingerprintConfig
+        ? `Fingerprint injection ready for profile ${profile.id}`
+        : `Browser debugger ready for profile ${profile.id}`
+    )
 
     return debuggerClient
   }

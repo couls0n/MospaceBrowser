@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '@shared/constants'
 import type {
   AppSettings,
+  BrowserControlExecutionResult,
+  BrowserControlTab,
   BrowserInstanceInfo,
   BrowserExecutablePathInfo,
   CloneProfileInput,
@@ -10,6 +12,7 @@ import type {
   CreateProxyInput,
   DeleteGroupInput,
   DeleteProfileInput,
+  ExecuteBrowserControlInput,
   FingerprintConfig,
   FingerprintGenerationOptions,
   GroupRecord,
@@ -45,6 +48,10 @@ export interface XussApi {
     start: (input: { profileId: string }) => Promise<IPCResponse<BrowserInstanceInfo>>
     stop: (input: { profileId: string }) => Promise<IPCResponse<void>>
     verify: (input: { profileId: string }) => Promise<IPCResponse<void>>
+    getControlTabs: (input: { profileId: string }) => Promise<IPCResponse<BrowserControlTab[]>>
+    executeControl: (
+      input: ExecuteBrowserControlInput
+    ) => Promise<IPCResponse<BrowserControlExecutionResult>>
     getStatus: (input: { profileId: string }) => Promise<IPCResponse<'running' | 'stopped'>>
     getAllRunning: () => Promise<IPCResponse<BrowserInstanceInfo[]>>
   }
@@ -86,6 +93,8 @@ const api: XussApi = {
     start: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.START, input),
     stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.STOP, input),
     verify: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.VERIFY, input),
+    getControlTabs: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.CONTROL_TABS, input),
+    executeControl: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.CONTROL_EXECUTE, input),
     getStatus: (input) => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.GET_STATUS, input),
     getAllRunning: () => ipcRenderer.invoke(IPC_CHANNELS.LAUNCHER.GET_ALL_RUNNING)
   },

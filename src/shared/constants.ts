@@ -21,6 +21,8 @@ export const IPC_CHANNELS = {
     START: 'launcher:start',
     STOP: 'launcher:stop',
     VERIFY: 'launcher:verify',
+    CONTROL_TABS: 'launcher:control:tabs',
+    CONTROL_EXECUTE: 'launcher:control:execute',
     GET_STATUS: 'launcher:getStatus',
     GET_ALL_RUNNING: 'launcher:getAllRunning',
     STATUS_CHANGE: 'launcher:statusChange'

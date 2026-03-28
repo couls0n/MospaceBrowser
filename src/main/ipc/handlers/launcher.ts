@@ -2,7 +2,12 @@ import { BrowserLauncher } from '@main/core/BrowserLauncher'
 import { ProfileManager } from '@main/core/ProfileManager'
 import type { IpcHandlerDefinition } from '@main/ipc'
 import { IPC_CHANNELS } from '@shared/constants'
-import { StartProfileSchema, StopProfileSchema } from '@shared/schemas'
+import {
+  ExecuteBrowserControlSchema,
+  GetBrowserControlTabsSchema,
+  StartProfileSchema,
+  StopProfileSchema
+} from '@shared/schemas'
 
 const profileManager = ProfileManager.getInstance()
 const browserLauncher = BrowserLauncher.getInstance()
@@ -30,6 +35,20 @@ export const launcherHandlers: IpcHandlerDefinition[] = [
       const input = StartProfileSchema.parse(payload)
       await browserLauncher.openVerificationPage(input.profileId)
       return undefined
+    }
+  },
+  {
+    channel: IPC_CHANNELS.LAUNCHER.CONTROL_TABS,
+    handler: async (_event, payload) => {
+      const input = GetBrowserControlTabsSchema.parse(payload)
+      return browserLauncher.getControlTabs(input.profileId)
+    }
+  },
+  {
+    channel: IPC_CHANNELS.LAUNCHER.CONTROL_EXECUTE,
+    handler: async (_event, payload) => {
+      const input = ExecuteBrowserControlSchema.parse(payload)
+      return browserLauncher.executeControlScript(input)
     }
   },
   {
