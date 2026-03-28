@@ -60,7 +60,6 @@ const emit = defineEmits<{
 const fingerprintStore = useFingerprintStore()
 const groupStore = useGroupStore()
 const isEditMode = computed(() => Boolean(props.profile))
-const activeStep = ref(0)
 const fingerprintMode = ref<FingerprintMode>('default')
 const defaultFingerprint = ref<FingerprintConfig | null>(null)
 const fingerprintSeed = ref('')
@@ -85,13 +84,6 @@ const form = reactive<ProfileFormState>({
   selectedOS: 'random',
   enableFingerprint: true
 })
-
-const steps = [
-  { title: '基础信息', description: '浏览器名称、语言与窗口设置' },
-  { title: '指纹配置', description: '默认指纹或自定义指纹参数' },
-  { title: '代理设置', description: '绑定 HTTP / SOCKS5 代理' },
-  { title: '确认保存', description: '核对配置后保存' }
-]
 
 function cloneFingerprintConfig(
   config?: FingerprintConfig | null
@@ -246,7 +238,6 @@ function resetForm(profile?: Profile | null): void {
   defaultFingerprint.value = cloneFingerprintConfig(profile?.fingerprintConfig) ?? null
   fingerprintStore.setFingerprint(cloneFingerprintConfig(profile?.fingerprintConfig) ?? null)
   fingerprintMode.value = profile?.fingerprintConfig ? 'custom' : 'default'
-  activeStep.value = 0
 
   isResetting.value = false
 
@@ -508,24 +499,6 @@ async function ensureFingerprintReady(): Promise<boolean> {
   return true
 }
 
-async function goNext(): Promise<void> {
-  if (activeStep.value === 0 && !validateBasicInfo()) {
-    return
-  }
-
-  if (activeStep.value === 1 && !(await ensureFingerprintReady())) {
-    return
-  }
-
-  if (activeStep.value === 2 && !validateProxy()) {
-    return
-  }
-
-  if (activeStep.value < 3) {
-    activeStep.value += 1
-  }
-}
-
 async function submit(): Promise<void> {
   if (!validateBasicInfo() || !validateProxy()) {
     return
@@ -586,17 +559,22 @@ async function submit(): Promise<void> {
   <el-dialog
     :model-value="modelValue"
     :title="isEditMode ? '编辑浏览器' : '创建浏览器'"
-    width="1180px"
+    width="1240px"
     align-center
     append-to-body
     class="profile-editor-dialog"
     @close="closeDialog"
   >
-    <el-steps :active="activeStep" finish-status="success" simple>
-      <el-step v-for="step in steps" :key="step.title" :title="step.title" />
-    </el-steps>
+    <div class="editor-layout">
+      <section class="editor-section">
+        <header class="editor-section__header">
+          <div>
+            <h3>基础信息</h3>
+            <p>在同一个界面中完成浏览器名称、语言、窗口和分组设置。</p>
+          </div>
+        </header>
 
-    <div v-show="activeStep === 0" class="step-content">
+        <div class="step-content">
       <el-form label-position="top" class="editor-form">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -736,9 +714,18 @@ async function submit(): Promise<void> {
           </el-col>
         </el-row>
       </el-form>
-    </div>
+        </div>
+      </section>
 
-    <div v-show="activeStep === 1" class="step-content">
+      <section class="editor-section">
+        <header class="editor-section__header">
+          <div>
+            <h3>指纹配置</h3>
+            <p>默认指纹和自定义指纹都在这里处理，不再单独切步骤。</p>
+          </div>
+        </header>
+
+        <div class="step-content">
       <el-form label-position="top">
         <el-form-item>
           <el-checkbox v-model="form.enableFingerprint">
@@ -1093,9 +1080,18 @@ async function submit(): Promise<void> {
           class="mt-3"
         />
       </el-form>
-    </div>
+        </div>
+      </section>
 
-    <div v-show="activeStep === 2" class="step-content">
+      <section class="editor-section">
+        <header class="editor-section__header">
+          <div>
+            <h3>代理设置</h3>
+            <p>如果这个浏览器需要代理，可以直接在这里一并配置。</p>
+          </div>
+        </header>
+
+        <div class="step-content">
       <el-form label-position="top">
         <el-form-item label="代理类型">
           <el-radio-group v-model="form.proxyType">
@@ -1144,9 +1140,18 @@ async function submit(): Promise<void> {
           </el-row>
         </template>
       </el-form>
-    </div>
+        </div>
+      </section>
 
-    <div v-show="activeStep === 3" class="step-content">
+      <section class="editor-section editor-section--summary">
+        <header class="editor-section__header">
+          <div>
+            <h3>保存前摘要</h3>
+            <p>所有选项都在当前页面完成，这里只做最终复核。</p>
+          </div>
+        </header>
+
+        <div class="step-content">
       <el-alert title="保存前请再次确认这份浏览器配置" type="info" :closable="false" class="mb-4" />
 
       <el-descriptions :column="1" border>
@@ -1178,13 +1183,13 @@ async function submit(): Promise<void> {
           }}
         </el-descriptions-item>
       </el-descriptions>
+        </div>
+      </section>
     </div>
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button v-if="activeStep > 0" @click="activeStep -= 1">上一步</el-button>
-        <el-button v-if="activeStep < 3" type="primary" @click="goNext">下一步</el-button>
-        <el-button v-else type="success" :loading="saving" @click="submit">
+        <el-button type="success" :loading="saving" @click="submit">
           {{ isEditMode ? '保存修改' : '创建浏览器' }}
         </el-button>
         <el-button @click="closeDialog">取消</el-button>
@@ -1211,23 +1216,53 @@ async function submit(): Promise<void> {
 
 :deep(.profile-editor-dialog .el-dialog__body) {
   padding: 18px 24px 10px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 
 :deep(.profile-editor-dialog .el-dialog__footer) {
   padding: 14px 24px 22px;
 }
 
-:deep(.profile-editor-dialog .el-step__title) {
-  font-weight: 600;
-}
-
 :deep(.profile-editor-dialog .el-input-number) {
   width: 100%;
 }
 
+.editor-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.editor-section {
+  padding: 20px;
+  border: 1px solid #e8ecf3;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.editor-section--summary {
+  background: #fafbff;
+}
+
+.editor-section__header {
+  margin-bottom: 8px;
+}
+
+.editor-section__header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.editor-section__header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .step-content {
-  padding: 22px 0 8px;
-  min-height: 500px;
+  padding: 8px 0 0;
+  min-height: auto;
 }
 
 .preset-list {
@@ -1304,10 +1339,6 @@ async function submit(): Promise<void> {
 }
 
 @media (max-width: 960px) {
-  .step-content {
-    min-height: 420px;
-  }
-
   .fingerprint-grid {
     grid-template-columns: 1fr;
   }
